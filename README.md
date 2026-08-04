@@ -83,14 +83,14 @@ git push -u origin main
 ---
 
 ## Progress
-**2/58 problems solved**
+**3/58 problems solved**
 
 | # | Problem | Status |
 |---|---------|--------|
 | | **Part 1 — Tiny Transformer (Decoder-Only)** | |
 | 001 | `build_token_vocab` | ✅ |
 | 002 | `encode_and_decode` | ✅ |
-| 003 | `build_causal_mask` | ⬜ |
+| 003 | `build_causal_mask` | ✅ |
 | 004 | `scaled_dot_product_attention` | ⬜ |
 | 005 | `multi_head_attention_forward` | ⬜ |
 | 006 | `feed_forward_block` | ⬜ |
