@@ -54,7 +54,7 @@ def commit_and_push(step: str, step_name: str) -> bool:
     padded = step.zfill(3)
     print(f"\n  Committing model.py...")
 
-    subprocess.run(["git", "add", str(MODEL_FILE)], cwd=ROOT)
+    subprocess.run(["git", "add", "-A"], cwd=ROOT)
 
     commit_msg = f"solve {padded}: {step_name}"
     r = subprocess.run(["git", "commit", "-m", commit_msg], cwd=ROOT)
