@@ -46,7 +46,13 @@ import torch
 def encode(text: str, token_to_id: dict) -> list[int]:
     """Split on whitespace and look up each token in token_to_id."""
     # TODO: split text on whitespace, map each token to its id via token_to_id
-    raise NotImplementedError
+    words = text.split()
+    token_id = []
+    
+    for word in words :
+        token_id.append(token_to_id[word])
+
+    return token_id
 
 
 # Step 3 - decode
