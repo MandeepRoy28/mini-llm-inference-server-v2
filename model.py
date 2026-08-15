@@ -61,7 +61,12 @@ import torch
 def decode(ids: list[int], id_to_token: dict) -> str:
     """Convert a list of token ids back to a string joined with spaces."""
     # TODO: map each id to its token via id_to_token, join with ' '
-    raise NotImplementedError
+    text = ""
+    for id in ids :
+        text += id_to_token[id]
+        text+=" "
+    
+    return text.rstrip()
 
 
 # Step 4 - build_causal_mask
