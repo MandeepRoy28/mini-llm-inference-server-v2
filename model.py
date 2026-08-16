@@ -282,7 +282,12 @@ import torch
 def top_k_filter(logits: torch.Tensor, k: int) -> torch.Tensor:
     """Zero out all logits except the top-k values (set others to -inf)."""
     # TODO: find the k-th largest value; mask everything below it to -inf
-    raise NotImplementedError
+    values, indexes = torch.topk(logits, k)
+    kth_largest_value = values[-1]
+
+    mask = logits < kth_largest_value
+    logits = logits.masked_fill(mask, float('-inf'))
+    return logits
 
 
 # Step 13 - top_p_nucleus_filter
