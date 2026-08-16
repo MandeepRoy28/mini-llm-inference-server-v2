@@ -185,24 +185,25 @@ def transformer_block(
 ) -> torch.Tensor:
     """Pre-LayerNorm transformer block: LN → MHA + residual, LN → FFN + residual.
 
-    attn_params keys: 'ln1_w', 'ln1_b', 'W_q', 'W_k', 'W_v', 'W_o'
-    ffn_params keys:  'ln2_w', 'ln2_b', 'W1', 'b1', 'W2', 'b2'
-
     Calls: multi_head_attention_forward (step 6), feed_forward_block (step 7)
     """
     # TODO:
-    #   ln1 = torch.layer_norm(x, [x.size(-1)], attn_params['ln1_w'], attn_params['ln1_b'])
+    #   ln1 = torch.layer_norm(x, [x.size(-1)], attn_params['gamma_1'], attn_params['beta_1'])
     #   x = x + multi_head_attention_forward(ln1,
     #               attn_params['W_q'], attn_params['W_k'],
     #               attn_params['W_v'], attn_params['W_o'],
     #               n_heads, mask)
-    #   ln2 = torch.layer_norm(x, [x.size(-1)], ffn_params['ln2_w'], ffn_params['ln2_b'])
+    #   ln2 = torch.layer_norm(x, [x.size(-1)], ffn_params['gamma_2'], ffn_params['beta_2'])
     #   x = x + feed_forward_block(ln2,
     #               ffn_params['W1'], ffn_params['b1'],
     #               ffn_params['W2'], ffn_params['b2'])
     #   return x
-    ln1 = torch.layer_norm(x, attn_params['ln1_w'], attn_params['ln1_b'])
-    x = x + multi_head_attention_forward(x, )
+    ln1 = torch.layer_norm(x, [x.size(-1)], attn_params['gamma_1'], attn_params['beta_1'])
+    x = x + multi_head_attention_forward(
+        ln1, attn_params['W_q'], attn_params['W_k'], attn_params['W_v'], attn_params['W_o'], n_heads, mask)
+    ln2 = torch.layer_norm(x, [x.size(-1)], ffn_params['gamma_2'], ffn_params['beta_2'])
+    x = x + feed_forward_block(ln2, ffn_params['W1'], ffn_params['b1'], ffn_params['W2'], ffn_params['b2'])
+    return x
 
 
 # Step 9 - gpt_model_forward
