@@ -264,7 +264,7 @@ import torch
 def greedy_sample(logits: torch.Tensor) -> int:
     """Return the argmax token id (greedy decoding)."""
     # TODO: return int(logits.argmax(-1))
-    raise NotImplementedError
+    return int(logits.argmax(-1))
 
 
 # Step 11 - temperature_scaling
