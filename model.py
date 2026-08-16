@@ -135,7 +135,7 @@ def multi_head_attention_forward(
     #       call scaled_dot_product_attention per head (or batched);
     #       concatenate heads; project through W_o
     Q = x@W_q
-    K = x@W_k
+    K = x@W_v
     V = x@W_k 
 
     seq_len = Q.size(-2)
@@ -190,7 +190,8 @@ def transformer_block(
     #   ln2 = layer_norm(x, ffn_params['ln2_w'], ffn_params['ln2_b'])
     #   x = x + feed_forward_block(ln2, ...)
     #   return x
-    raise NotImplementedError
+    ln1 = torch.layer_norm(x, attn_params['ln1_w'], attn_params['ln1_b'])
+    x = x + multi_head_attention_forward(x, )
 
 
 # Step 9 - gpt_model_forward
@@ -212,7 +213,7 @@ def gpt_model_forward(
     #                             params['n_heads'], mask)
     #   x = layer_norm(x, params['ln_f_w'], params['ln_f_b'])
     #   return x @ params['wte'].T   # weight-tied unembed
-    raise NotImplementedError
+    
 
 
 # ---------------------------------------------------------------------------

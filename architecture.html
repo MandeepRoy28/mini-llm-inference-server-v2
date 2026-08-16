@@ -1,0 +1,1202 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Mini LLM Inference Server — Architecture</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  :root {
+    --bg: #0f1117;
+    --surface: #1a1d27;
+    --border: #2a2d3e;
+    --text: #e2e8f0;
+    --muted: #7c8db5;
+    --p1: #3b82f6;
+    --p2: #8b5cf6;
+    --p3: #14b8a6;
+    --p4: #f97316;
+    --p5: #ec4899;
+    --p6: #22c55e;
+    --p7: #eab308;
+    --done: #22c55e;
+    --todo: #f59e0b;
+  }
+  body { background: var(--bg); color: var(--text); font-family: 'Segoe UI', system-ui, sans-serif; display: flex; height: 100vh; overflow: hidden; }
+
+  /* Sidebar */
+  #sidebar {
+    width: 220px; min-width: 220px; background: var(--surface); border-right: 1px solid var(--border);
+    display: flex; flex-direction: column; overflow-y: auto;
+  }
+  #sidebar h1 { font-size: 13px; font-weight: 700; color: var(--muted); padding: 18px 16px 10px; letter-spacing: 0.08em; text-transform: uppercase; }
+  .part-tab {
+    padding: 10px 16px; cursor: pointer; font-size: 13px; display: flex; align-items: center; gap: 10px;
+    border-left: 3px solid transparent; transition: all 0.15s; color: var(--muted);
+  }
+  .part-tab:hover { background: rgba(255,255,255,0.04); color: var(--text); }
+  .part-tab.active { color: var(--text); background: rgba(255,255,255,0.06); }
+  .part-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+  .part-tab .step-range { font-size: 10px; color: var(--muted); margin-left: auto; }
+
+  /* Main */
+  #main { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
+  #topbar {
+    background: var(--surface); border-bottom: 1px solid var(--border);
+    padding: 14px 24px; display: flex; align-items: center; justify-content: space-between;
+  }
+  #topbar h2 { font-size: 16px; font-weight: 600; }
+  #topbar .subtitle { font-size: 12px; color: var(--muted); margin-top: 2px; }
+  .legend { display: flex; gap: 16px; }
+  .legend-item { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--muted); }
+  .legend-dot { width: 8px; height: 8px; border-radius: 50%; }
+
+  #content { flex: 1; display: flex; overflow: hidden; }
+
+  #grid-area { flex: 1; overflow-y: auto; padding: 24px; }
+  .part-section { margin-bottom: 40px; }
+  .part-header {
+    display: flex; align-items: center; gap: 12px; margin-bottom: 16px;
+    padding-bottom: 10px; border-bottom: 1px solid var(--border);
+  }
+  .part-badge {
+    padding: 3px 10px; border-radius: 12px; font-size: 11px; font-weight: 700;
+    letter-spacing: 0.05em; text-transform: uppercase;
+  }
+  .part-title { font-size: 15px; font-weight: 600; }
+  .part-desc { font-size: 12px; color: var(--muted); margin-left: auto; }
+
+  .steps-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 10px; }
+  .step-card {
+    background: var(--surface); border: 1px solid var(--border); border-radius: 8px;
+    padding: 12px 14px; cursor: pointer; transition: all 0.15s; position: relative;
+    border-top: 3px solid transparent;
+  }
+  .step-card:hover { border-color: var(--muted); transform: translateY(-1px); box-shadow: 0 4px 12px rgba(0,0,0,0.3); }
+  .step-card.active { box-shadow: 0 0 0 2px var(--accent, #3b82f6); }
+  .step-num { font-size: 10px; font-weight: 700; color: var(--muted); letter-spacing: 0.05em; margin-bottom: 4px; }
+  .step-name { font-size: 12px; font-weight: 600; color: var(--text); word-break: break-word; }
+  .step-brief { font-size: 11px; color: var(--muted); margin-top: 5px; line-height: 1.4; }
+
+  /* Detail panel */
+  #detail {
+    width: 380px; min-width: 380px; background: var(--surface); border-left: 1px solid var(--border);
+    overflow-y: auto; transition: width 0.2s;
+  }
+  #detail.hidden { width: 0; min-width: 0; overflow: hidden; }
+  #detail-inner { padding: 24px; min-width: 380px; }
+  .detail-close { float: right; cursor: pointer; color: var(--muted); font-size: 18px; line-height: 1; padding: 2px 6px; border-radius: 4px; }
+  .detail-close:hover { color: var(--text); background: var(--border); }
+  .detail-step-num { font-size: 11px; color: var(--muted); letter-spacing: 0.06em; text-transform: uppercase; margin-bottom: 4px; }
+  .detail-name { font-size: 18px; font-weight: 700; margin-bottom: 6px; }
+  .detail-part-badge { display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 11px; font-weight: 600; margin-bottom: 16px; }
+  .detail-section { margin-bottom: 18px; }
+  .detail-section h4 { font-size: 11px; font-weight: 700; color: var(--muted); letter-spacing: 0.08em; text-transform: uppercase; margin-bottom: 8px; }
+  .detail-section p { font-size: 13px; color: #c8d3e8; line-height: 1.65; }
+  .detail-section ul { padding-left: 16px; }
+  .detail-section li { font-size: 13px; color: #c8d3e8; line-height: 1.65; margin-bottom: 2px; }
+  .dep-chip {
+    display: inline-block; background: var(--border); border-radius: 6px;
+    padding: 3px 8px; font-size: 11px; font-weight: 600; margin: 2px; cursor: pointer; transition: all 0.1s;
+  }
+  .dep-chip:hover { background: #3a3f5a; color: var(--text); }
+  .code-block {
+    background: #0d1117; border: 1px solid var(--border); border-radius: 6px;
+    padding: 10px 12px; font-family: 'Fira Code', 'Cascadia Code', monospace;
+    font-size: 11px; color: #a8d8ff; line-height: 1.6; overflow-x: auto; margin-top: 6px;
+  }
+  .status-banner {
+    display: flex; align-items: center; gap: 8px; padding: 8px 12px; border-radius: 6px;
+    font-size: 12px; font-weight: 600; margin-bottom: 16px;
+  }
+  .status-banner.done { background: rgba(34,197,94,0.12); color: #4ade80; border: 1px solid rgba(34,197,94,0.25); }
+  .status-banner.partial { background: rgba(245,158,11,0.12); color: #fbbf24; border: 1px solid rgba(245,158,11,0.25); }
+  .status-banner.todo { background: rgba(124,139,181,0.1); color: var(--muted); border: 1px solid var(--border); }
+  .divider { height: 1px; background: var(--border); margin: 16px 0; }
+
+  /* View toggle */
+  .view-toggle { display: flex; gap: 4px; background: var(--bg); border: 1px solid var(--border); border-radius: 8px; padding: 3px; }
+  .view-btn { padding: 5px 14px; border-radius: 6px; border: none; background: transparent; color: var(--muted); font-size: 12px; font-weight: 600; cursor: pointer; transition: all 0.15s; }
+  .view-btn.active { background: var(--surface); color: var(--text); box-shadow: 0 1px 3px rgba(0,0,0,0.3); }
+  .view-btn:hover:not(.active) { color: var(--text); }
+
+  /* Diagram area */
+  #diagram-area { flex: 1; overflow: auto; padding: 20px 24px; display: none; }
+  #diagram-area.visible { display: block; }
+  #grid-area.hidden-view { display: none; }
+
+  /* SVG diagram hover effects */
+  .diag-part { cursor: pointer; }
+  .diag-part:hover rect:first-child { filter: brightness(1.2); }
+  .diag-part rect.hover-overlay { transition: fill 0.15s; }
+  .diag-part:hover rect.hover-overlay { fill: rgba(255,255,255,0.04) !important; }
+  .diag-part.diag-active rect.hover-overlay { fill: rgba(255,255,255,0.07) !important; }
+  .diag-part.diag-active > rect:first-child { filter: brightness(1.4) drop-shadow(0 0 6px currentColor); }
+
+  /* Trace panel */
+  #trace-bar {
+    display: flex; align-items: center; gap: 12px; padding: 10px 16px;
+    background: var(--surface); border: 1px solid var(--border); border-radius: 8px;
+    margin-bottom: 16px; flex-wrap: wrap;
+  }
+  #trace-bar .trace-title { font-size: 13px; font-weight: 600; color: var(--text); flex: 1; }
+  #trace-bar .trace-counter { font-size: 11px; color: var(--muted); }
+  .trace-btn {
+    background: var(--border); border: none; color: var(--text); border-radius: 6px;
+    padding: 5px 12px; font-size: 12px; font-weight: 600; cursor: pointer; transition: all 0.15s;
+  }
+  .trace-btn:hover { background: #3a3f5a; }
+  .trace-btn.primary { background: #3b82f6; color: #fff; }
+  .trace-btn.primary:hover { background: #2563eb; }
+  .trace-btn:disabled { opacity: 0.3; cursor: default; }
+
+  #trace-card {
+    background: var(--surface); border: 1px solid var(--border); border-radius: 10px;
+    margin-top: 16px; overflow: hidden;
+  }
+  #trace-card.hidden { display: none; }
+  .trace-card-header {
+    padding: 12px 18px; border-bottom: 1px solid var(--border);
+    display: flex; align-items: center; gap: 10px;
+  }
+  .trace-step-badge {
+    font-size: 10px; font-weight: 800; letter-spacing: 0.08em; padding: 3px 8px; border-radius: 6px;
+  }
+  .trace-card-title { font-size: 14px; font-weight: 700; color: var(--text); }
+  .trace-part-label { font-size: 11px; color: var(--muted); margin-left: auto; }
+  .trace-card-body { display: grid; grid-template-columns: 1fr 1fr; gap: 0; }
+  .trace-col { padding: 16px 18px; }
+  .trace-col + .trace-col { border-left: 1px solid var(--border); }
+  .trace-col-label {
+    font-size: 10px; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase;
+    color: var(--muted); margin-bottom: 8px; display: flex; align-items: center; gap: 6px;
+  }
+  .trace-arrow { font-size: 18px; color: var(--muted); }
+  .trace-data {
+    background: #0d1117; border: 1px solid var(--border); border-radius: 6px;
+    padding: 10px 12px; font-family: 'Fira Code','Cascadia Code',monospace;
+    font-size: 11px; color: #a8d8ff; line-height: 1.65; white-space: pre-wrap; min-height: 90px;
+  }
+  .trace-explain {
+    padding: 12px 18px; border-top: 1px solid var(--border);
+    font-size: 12.5px; color: #c8d3e8; line-height: 1.65;
+    background: rgba(255,255,255,0.02);
+  }
+  .trace-explain strong { color: #fde68a; }
+  .trace-progress {
+    display: flex; gap: 3px; padding: 10px 18px 0; flex-wrap: wrap;
+  }
+  .trace-dot {
+    width: 6px; height: 6px; border-radius: 50%; background: var(--border); cursor: pointer; transition: all 0.15s;
+  }
+  .trace-dot.active { background: #3b82f6; transform: scale(1.4); }
+  .trace-dot.visited { background: #4a5568; }
+</style>
+</head>
+<body>
+
+<div id="sidebar">
+  <h1>Parts</h1>
+</div>
+
+<div id="main">
+  <div id="topbar">
+    <div>
+      <div id="topbar-title" style="font-size:16px;font-weight:600;">Mini LLM Inference Server</div>
+      <div class="subtitle">58 steps across 7 parts — click any block to explore</div>
+    </div>
+    <div style="display:flex;align-items:center;gap:20px">
+      <div class="view-toggle">
+        <button class="view-btn active" id="btn-grid" onclick="switchView('grid')">Grid</button>
+        <button class="view-btn" id="btn-diagram" onclick="switchView('diagram')">Block Diagram</button>
+      </div>
+    </div>
+  </div>
+  <div id="content">
+    <div id="grid-area"></div>
+
+    <!-- ===== BLOCK DIAGRAM VIEW ===== -->
+    <div id="diagram-area">
+
+      <!-- Trace toolbar -->
+      <div id="trace-bar">
+        <span class="trace-title">▸ Example: <code style="color:#93c5fd;font-size:12px">"the cat sat"</code> → predict next word</span>
+        <span class="trace-counter" id="trace-counter">Not started</span>
+        <button class="trace-btn" id="btn-prev" onclick="traceStep(-1)" disabled>◀ Prev</button>
+        <button class="trace-btn primary" id="btn-start" onclick="startTrace()">▶ Run Trace</button>
+        <button class="trace-btn" id="btn-next" onclick="traceStep(1)" disabled>Next ▶</button>
+        <button class="trace-btn" id="btn-reset" onclick="resetTrace()" style="display:none">↺ Reset</button>
+      </div>
+
+      <svg id="arch-svg" viewBox="0 0 1040 605" xmlns="http://www.w3.org/2000/svg"
+           style="width:100%;min-width:960px;max-height:none;font-family:'Segoe UI',system-ui,sans-serif">
+        <defs>
+          <marker id="arr" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0,8 3,0 6" fill="#4a5568"/></marker>
+          <marker id="arr-blue" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0,8 3,0 6" fill="#3b82f6" opacity="0.5"/></marker>
+        </defs>
+
+        <!-- ========= TIER BACKGROUND BANDS ========= -->
+        <rect x="2" y="2" width="1036" height="212" rx="10" fill="#3b82f605" stroke="#2a2d3e" stroke-width="1" stroke-dasharray="5,4"/>
+        <text x="520" y="15" text-anchor="middle" font-size="8.5" fill="#3a4468" letter-spacing="2" font-weight="700">INFERENCE FOUNDATION</text>
+
+        <rect x="2" y="222" width="1036" height="128" rx="10" fill="#14b8a605" stroke="#2a2d3e" stroke-width="1" stroke-dasharray="5,4"/>
+        <text x="520" y="235" text-anchor="middle" font-size="8.5" fill="#3a4468" letter-spacing="2" font-weight="700">MEMORY OPTIMIZATION LAYER</text>
+
+        <rect x="2" y="358" width="1036" height="110" rx="10" fill="#ec489905" stroke="#2a2d3e" stroke-width="1" stroke-dasharray="5,4"/>
+        <text x="520" y="371" text-anchor="middle" font-size="8.5" fill="#3a4468" letter-spacing="2" font-weight="700">SERVING LAYER</text>
+
+        <rect x="2" y="476" width="1036" height="127" rx="10" fill="#22c55e05" stroke="#2a2d3e" stroke-width="1" stroke-dasharray="5,4"/>
+        <text x="275" y="489" text-anchor="middle" font-size="8.5" fill="#3a4468" letter-spacing="2" font-weight="700">STREAMING API</text>
+        <text x="730" y="489" text-anchor="middle" font-size="8.5" fill="#3a4468" letter-spacing="2" font-weight="700">BENCHMARKS</text>
+
+        <!-- ========= INPUT / OUTPUT NODES ========= -->
+        <rect x="6" y="68" width="72" height="68" rx="8" fill="#1a1d27" stroke="#3b82f6" stroke-width="1.5"/>
+        <text x="42" y="97" text-anchor="middle" font-size="11" fill="#93c5fd" font-weight="700">Input</text>
+        <text x="42" y="112" text-anchor="middle" font-size="11" fill="#93c5fd" font-weight="700">Text</text>
+        <line x1="78" y1="102" x2="94" y2="102" stroke="#4a5568" stroke-width="1.5" marker-end="url(#arr)"/>
+
+        <rect x="962" y="68" width="72" height="68" rx="8" fill="#1a1d27" stroke="#8b5cf6" stroke-width="1.5"/>
+        <text x="998" y="97" text-anchor="middle" font-size="11" fill="#c4b5fd" font-weight="700">Output</text>
+        <text x="998" y="112" text-anchor="middle" font-size="11" fill="#c4b5fd" font-weight="700">Text</text>
+        <line x1="891" y1="102" x2="962" y2="102" stroke="#4a5568" stroke-width="1.5" marker-end="url(#arr)"/>
+
+        <!-- P1 → P2 internal arrow -->
+        <line x1="485" y1="102" x2="507" y2="102" stroke="#4a5568" stroke-width="1.5" marker-end="url(#arr)"/>
+
+        <!-- Autoregressive loop (arc below P1 + P2) -->
+        <path d="M 697 212 C 697 228 290 228 290 212" stroke="#7c8db5" stroke-width="1.2" fill="none" stroke-dasharray="4,3" marker-end="url(#arr)"/>
+        <text x="493" y="239" text-anchor="middle" font-size="8" fill="#4a5568" font-style="italic">autoregressive loop</text>
+
+        <!-- Tier 1 → Tier 2 arrows -->
+        <line x1="290" y1="212" x2="290" y2="240" stroke="#4a5568" stroke-width="1.5" marker-end="url(#arr)"/>
+        <line x1="697" y1="212" x2="697" y2="240" stroke="#4a5568" stroke-width="1.5" marker-end="url(#arr)"/>
+
+        <!-- P3 ↔ P4 arrow -->
+        <line x1="487" y1="305" x2="507" y2="305" stroke="#4a5568" stroke-width="1.5" marker-end="url(#arr)"/>
+
+        <!-- Tier 2 → Tier 3 arrow -->
+        <line x1="493" y1="350" x2="493" y2="376" stroke="#4a5568" stroke-width="1.5" marker-end="url(#arr)"/>
+
+        <!-- Tier 3 → Tier 4 arrows -->
+        <line x1="290" y1="468" x2="290" y2="494" stroke="#4a5568" stroke-width="1.5" marker-end="url(#arr)"/>
+        <line x1="697" y1="468" x2="697" y2="494" stroke="#4a5568" stroke-width="1.5" marker-end="url(#arr)"/>
+
+        <!-- ========= PART 1 · TINY TRANSFORMER ========= -->
+        <g class="diag-part" onclick="diagramPartClick(1)">
+          <rect x="94" y="20" width="391" height="192" rx="8" fill="#3b82f60d" stroke="#3b82f6" stroke-width="1.5"/>
+          <rect x="94" y="20" width="391" height="28" rx="8" fill="#3b82f625"/>
+          <rect x="94" y="40" width="391" height="8" fill="#3b82f625"/>
+          <text x="289" y="38" text-anchor="middle" font-size="10.5" fill="#93c5fd" font-weight="700" letter-spacing="0.5">PART 1 · TINY TRANSFORMER</text>
+          <!-- left col -->
+          <text x="108" y="62" font-size="9" fill="#5c6f9a" font-weight="700">01</text><text x="122" y="62" font-size="9" fill="#c8d3e8">build_token_vocab</text>
+          <text x="108" y="76" font-size="9" fill="#5c6f9a" font-weight="700">02</text><text x="122" y="76" font-size="9" fill="#c8d3e8">encode</text>
+          <text x="108" y="90" font-size="9" fill="#5c6f9a" font-weight="700">03</text><text x="122" y="90" font-size="9" fill="#c8d3e8">decode</text>
+          <text x="108" y="104" font-size="9" fill="#5c6f9a" font-weight="700">04</text><text x="122" y="104" font-size="9" fill="#c8d3e8">build_causal_mask</text>
+          <text x="108" y="118" font-size="9" fill="#5c6f9a" font-weight="700">05</text><text x="122" y="118" font-size="9" fill="#c8d3e8">scaled_dot_product_attn</text>
+          <line x1="289" y1="48" x2="289" y2="208" stroke="#2a2d3e" stroke-width="0.8"/>
+          <!-- right col -->
+          <text x="300" y="62" font-size="9" fill="#5c6f9a" font-weight="700">06</text><text x="314" y="62" font-size="9" fill="#c8d3e8">multi_head_attention</text>
+          <text x="300" y="76" font-size="9" fill="#5c6f9a" font-weight="700">07</text><text x="314" y="76" font-size="9" fill="#c8d3e8">feed_forward_block</text>
+          <text x="300" y="90" font-size="9" fill="#5c6f9a" font-weight="700">08</text><text x="314" y="90" font-size="9" fill="#c8d3e8">transformer_block</text>
+          <text x="300" y="104" font-size="9" fill="#5c6f9a" font-weight="700">09</text><text x="314" y="104" font-size="9" fill="#c8d3e8">gpt_model_forward</text>
+          <!-- hover overlay -->
+          <rect x="94" y="20" width="391" height="192" rx="8" fill="transparent" class="hover-overlay"/>
+        </g>
+
+        <!-- ========= PART 2 · SAMPLING ========= -->
+        <g class="diag-part" onclick="diagramPartClick(10)">
+          <rect x="507" y="20" width="384" height="192" rx="8" fill="#8b5cf60d" stroke="#8b5cf6" stroke-width="1.5"/>
+          <rect x="507" y="20" width="384" height="28" rx="8" fill="#8b5cf625"/>
+          <rect x="507" y="40" width="384" height="8" fill="#8b5cf625"/>
+          <text x="699" y="38" text-anchor="middle" font-size="10.5" fill="#c4b5fd" font-weight="700" letter-spacing="0.5">PART 2 · SAMPLING</text>
+          <!-- left col -->
+          <text x="521" y="62" font-size="9" fill="#5c6f9a" font-weight="700">10</text><text x="537" y="62" font-size="9" fill="#c8d3e8">greedy_sample</text>
+          <text x="521" y="76" font-size="9" fill="#5c6f9a" font-weight="700">11</text><text x="537" y="76" font-size="9" fill="#c8d3e8">temperature_scaling</text>
+          <text x="521" y="90" font-size="9" fill="#5c6f9a" font-weight="700">12</text><text x="537" y="90" font-size="9" fill="#c8d3e8">top_k_filter</text>
+          <text x="521" y="104" font-size="9" fill="#5c6f9a" font-weight="700">13</text><text x="537" y="104" font-size="9" fill="#c8d3e8">top_p_nucleus_filter</text>
+          <line x1="697" y1="48" x2="697" y2="208" stroke="#2a2d3e" stroke-width="0.8"/>
+          <!-- right col -->
+          <text x="708" y="62" font-size="9" fill="#5c6f9a" font-weight="700">14</text><text x="724" y="62" font-size="9" fill="#c8d3e8">sample_next_token</text>
+          <text x="708" y="76" font-size="9" fill="#5c6f9a" font-weight="700">15</text><text x="724" y="76" font-size="9" fill="#c8d3e8">autoregressive_generate</text>
+          <text x="708" y="90" font-size="9" fill="#5c6f9a" font-weight="700">16</text><text x="724" y="90" font-size="9" fill="#c8d3e8">generate_with_prompt</text>
+          <rect x="507" y="20" width="384" height="192" rx="8" fill="transparent" class="hover-overlay"/>
+        </g>
+
+        <!-- ========= PART 3 · KV CACHE ========= -->
+        <g class="diag-part" onclick="diagramPartClick(17)">
+          <rect x="94" y="240" width="393" height="110" rx="8" fill="#14b8a60d" stroke="#14b8a6" stroke-width="1.5"/>
+          <rect x="94" y="240" width="393" height="26" rx="8" fill="#14b8a625"/>
+          <rect x="94" y="258" width="393" height="8" fill="#14b8a625"/>
+          <text x="290" y="257" text-anchor="middle" font-size="10.5" fill="#5eead4" font-weight="700" letter-spacing="0.5">PART 3 · KV CACHE</text>
+          <text x="108" y="280" font-size="9" fill="#5c6f9a" font-weight="700">17</text><text x="124" y="280" font-size="9" fill="#c8d3e8">allocate_kv_cache_buffers</text>
+          <text x="108" y="294" font-size="9" fill="#5c6f9a" font-weight="700">18</text><text x="124" y="294" font-size="9" fill="#c8d3e8">write_kv_to_cache</text>
+          <text x="108" y="308" font-size="9" fill="#5c6f9a" font-weight="700">19</text><text x="124" y="308" font-size="9" fill="#c8d3e8">read_kv_from_cache</text>
+          <text x="108" y="322" font-size="9" fill="#5c6f9a" font-weight="700">20</text><text x="124" y="322" font-size="9" fill="#c8d3e8">attention_with_kv_cache</text>
+          <line x1="290" y1="266" x2="290" y2="345" stroke="#2a2d3e" stroke-width="0.8"/>
+          <text x="304" y="280" font-size="9" fill="#5c6f9a" font-weight="700">21</text><text x="320" y="280" font-size="9" fill="#c8d3e8">prefill_phase</text>
+          <text x="304" y="294" font-size="9" fill="#5c6f9a" font-weight="700">22</text><text x="320" y="294" font-size="9" fill="#c8d3e8">decode_phase</text>
+          <text x="304" y="308" font-size="9" fill="#5c6f9a" font-weight="700">23</text><text x="320" y="308" font-size="9" fill="#c8d3e8">benchmark_no_cache</text>
+          <text x="304" y="322" font-size="9" fill="#5c6f9a" font-weight="700">24</text><text x="320" y="322" font-size="9" fill="#c8d3e8">benchmark_kv_cache_speedup</text>
+          <rect x="94" y="240" width="393" height="110" rx="8" fill="transparent" class="hover-overlay"/>
+        </g>
+
+        <!-- ========= PART 4 · PAGED ATTENTION ========= -->
+        <g class="diag-part" onclick="diagramPartClick(25)">
+          <rect x="507" y="240" width="393" height="110" rx="8" fill="#f973160d" stroke="#f97316" stroke-width="1.5"/>
+          <rect x="507" y="240" width="393" height="26" rx="8" fill="#f9731625"/>
+          <rect x="507" y="258" width="393" height="8" fill="#f9731625"/>
+          <text x="703" y="257" text-anchor="middle" font-size="10.5" fill="#fb923c" font-weight="700" letter-spacing="0.5">PART 4 · PAGED ATTENTION</text>
+          <text x="521" y="280" font-size="9" fill="#5c6f9a" font-weight="700">25</text><text x="539" y="280" font-size="9" fill="#c8d3e8">simulate_naive_allocation</text>
+          <text x="521" y="294" font-size="9" fill="#5c6f9a" font-weight="700">26</text><text x="539" y="294" font-size="9" fill="#c8d3e8">get_page_size</text>
+          <text x="521" y="308" font-size="9" fill="#5c6f9a" font-weight="700">27</text><text x="539" y="308" font-size="9" fill="#c8d3e8">create_block_table</text>
+          <text x="521" y="322" font-size="9" fill="#5c6f9a" font-weight="700">28</text><text x="539" y="322" font-size="9" fill="#c8d3e8">allocate_page_pool</text>
+          <line x1="703" y1="266" x2="703" y2="345" stroke="#2a2d3e" stroke-width="0.8"/>
+          <text x="717" y="280" font-size="9" fill="#5c6f9a" font-weight="700">29</text><text x="733" y="280" font-size="9" fill="#c8d3e8">assign_page_to_sequence</text>
+          <text x="717" y="294" font-size="9" fill="#5c6f9a" font-weight="700">30</text><text x="733" y="294" font-size="9" fill="#c8d3e8">write_kv_to_page</text>
+          <text x="717" y="308" font-size="9" fill="#5c6f9a" font-weight="700">31</text><text x="733" y="308" font-size="9" fill="#c8d3e8">read_kv_via_block_table</text>
+          <text x="717" y="322" font-size="9" fill="#5c6f9a" font-weight="700">32</text><text x="733" y="322" font-size="9" fill="#c8d3e8">free_pages  ·  33. attn_paged_kv</text>
+          <rect x="507" y="240" width="393" height="110" rx="8" fill="transparent" class="hover-overlay"/>
+        </g>
+
+        <!-- ========= PART 5 · CONTINUOUS BATCHING ========= -->
+        <g class="diag-part" onclick="diagramPartClick(34)">
+          <rect x="94" y="376" width="806" height="92" rx="8" fill="#ec48990d" stroke="#ec4899" stroke-width="1.5"/>
+          <rect x="94" y="376" width="806" height="26" rx="8" fill="#ec489925"/>
+          <rect x="94" y="394" width="806" height="8" fill="#ec489925"/>
+          <text x="497" y="393" text-anchor="middle" font-size="10.5" fill="#f9a8d4" font-weight="700" letter-spacing="0.5">PART 5 · CONTINUOUS BATCHING</text>
+          <!-- col 1 -->
+          <text x="108" y="416" font-size="9" fill="#5c6f9a" font-weight="700">34</text><text x="124" y="416" font-size="9" fill="#c8d3e8">simulate_static_batching</text>
+          <text x="108" y="430" font-size="9" fill="#5c6f9a" font-weight="700">35</text><text x="124" y="430" font-size="9" fill="#c8d3e8">build_request_queue</text>
+          <text x="108" y="444" font-size="9" fill="#5c6f9a" font-weight="700">36</text><text x="124" y="444" font-size="9" fill="#c8d3e8">build_running_batch</text>
+          <line x1="363" y1="402" x2="363" y2="462" stroke="#2a2d3e" stroke-width="0.8"/>
+          <!-- col 2 -->
+          <text x="377" y="416" font-size="9" fill="#5c6f9a" font-weight="700">37</text><text x="393" y="416" font-size="9" fill="#c8d3e8">add_to_batch</text>
+          <text x="377" y="430" font-size="9" fill="#5c6f9a" font-weight="700">38</text><text x="393" y="430" font-size="9" fill="#c8d3e8">iteration_level_scheduler</text>
+          <text x="377" y="444" font-size="9" fill="#5c6f9a" font-weight="700">39</text><text x="393" y="444" font-size="9" fill="#c8d3e8">batched_decode_step</text>
+          <line x1="632" y1="402" x2="632" y2="462" stroke="#2a2d3e" stroke-width="0.8"/>
+          <!-- col 3 -->
+          <text x="646" y="416" font-size="9" fill="#5c6f9a" font-weight="700">40</text><text x="662" y="416" font-size="9" fill="#c8d3e8">handle_sequence_completion</text>
+          <text x="646" y="430" font-size="9" fill="#5c6f9a" font-weight="700">41</text><text x="662" y="430" font-size="9" fill="#c8d3e8">run_continuous_batching_loop</text>
+          <text x="646" y="444" font-size="9" fill="#5c6f9a" font-weight="700">42</text><text x="662" y="444" font-size="9" fill="#c8d3e8">benchmark_throughput</text>
+          <rect x="94" y="376" width="806" height="92" rx="8" fill="transparent" class="hover-overlay"/>
+        </g>
+
+        <!-- ========= PART 6 · STREAMING API ========= -->
+        <g class="diag-part" onclick="diagramPartClick(43)">
+          <rect x="94" y="494" width="393" height="107" rx="8" fill="#22c55e0d" stroke="#22c55e" stroke-width="1.5"/>
+          <rect x="94" y="494" width="393" height="26" rx="8" fill="#22c55e25"/>
+          <rect x="94" y="512" width="393" height="8" fill="#22c55e25"/>
+          <text x="290" y="511" text-anchor="middle" font-size="10.5" fill="#86efac" font-weight="700" letter-spacing="0.5">PART 6 · STREAMING API</text>
+          <text x="108" y="534" font-size="9" fill="#5c6f9a" font-weight="700">43</text><text x="124" y="534" font-size="9" fill="#c8d3e8">GenerateRequest (Pydantic)</text>
+          <text x="108" y="548" font-size="9" fill="#5c6f9a" font-weight="700">44</text><text x="124" y="548" font-size="9" fill="#c8d3e8">GenerateResponse (Pydantic)</text>
+          <text x="108" y="562" font-size="9" fill="#5c6f9a" font-weight="700">45</text><text x="124" y="562" font-size="9" fill="#c8d3e8">initialize_engine</text>
+          <text x="108" y="576" font-size="9" fill="#5c6f9a" font-weight="700">46</text><text x="124" y="576" font-size="9" fill="#c8d3e8">get_inference_engine</text>
+          <line x1="290" y1="520" x2="290" y2="596" stroke="#2a2d3e" stroke-width="0.8"/>
+          <text x="304" y="534" font-size="9" fill="#5c6f9a" font-weight="700">47</text><text x="320" y="534" font-size="9" fill="#c8d3e8">streaming_token_generator</text>
+          <text x="304" y="548" font-size="9" fill="#5c6f9a" font-weight="700">48</text><text x="320" y="548" font-size="9" fill="#c8d3e8">create_streaming_app (SSE)</text>
+          <text x="304" y="562" font-size="9" fill="#5c6f9a" font-weight="700">49</text><text x="320" y="562" font-size="9" fill="#c8d3e8">create_app (REST)</text>
+          <text x="304" y="576" font-size="9" fill="#5c6f9a" font-weight="700">50</text><text x="320" y="576" font-size="9" fill="#c8d3e8">build_curl_cmd  ·  51. parse_sse</text>
+          <rect x="94" y="494" width="393" height="107" rx="8" fill="transparent" class="hover-overlay"/>
+        </g>
+
+        <!-- ========= PART 7 · BENCHMARKS ========= -->
+        <g class="diag-part" onclick="diagramPartClick(52)">
+          <rect x="507" y="494" width="393" height="107" rx="8" fill="#eab3080d" stroke="#eab308" stroke-width="1.5"/>
+          <rect x="507" y="494" width="393" height="26" rx="8" fill="#eab30825"/>
+          <rect x="507" y="512" width="393" height="8" fill="#eab30825"/>
+          <text x="703" y="511" text-anchor="middle" font-size="10.5" fill="#fde047" font-weight="700" letter-spacing="0.5">PART 7 · BENCHMARKS</text>
+          <text x="521" y="534" font-size="9" fill="#5c6f9a" font-weight="700">52</text><text x="539" y="534" font-size="9" fill="#c8d3e8">compute_metrics (p50/p95/p99)</text>
+          <text x="521" y="548" font-size="9" fill="#5c6f9a" font-weight="700">53</text><text x="539" y="548" font-size="9" fill="#c8d3e8">generate_synthetic_requests</text>
+          <text x="521" y="562" font-size="9" fill="#5c6f9a" font-weight="700">54</text><text x="539" y="562" font-size="9" fill="#c8d3e8">run_single_request_benchmark</text>
+          <text x="521" y="576" font-size="9" fill="#5c6f9a" font-weight="700">55</text><text x="539" y="576" font-size="9" fill="#c8d3e8">run_concurrent_benchmark</text>
+          <line x1="703" y1="520" x2="703" y2="596" stroke="#2a2d3e" stroke-width="0.8"/>
+          <text x="717" y="534" font-size="9" fill="#5c6f9a" font-weight="700">56</text><text x="735" y="534" font-size="9" fill="#c8d3e8">plot_latency_vs_batch_size</text>
+          <text x="717" y="548" font-size="9" fill="#5c6f9a" font-weight="700">57</text><text x="735" y="548" font-size="9" fill="#c8d3e8">plot_throughput_vs_concurrency</text>
+          <text x="717" y="562" font-size="9" fill="#5c6f9a" font-weight="700">58</text><text x="735" y="562" font-size="9" fill="#c8d3e8">write_benchmark_report</text>
+          <rect x="507" y="494" width="393" height="107" rx="8" fill="transparent" class="hover-overlay"/>
+        </g>
+
+      </svg>
+
+      <!-- Trace step detail card -->
+      <div id="trace-card" class="hidden">
+        <div class="trace-progress" id="trace-progress"></div>
+        <div class="trace-card-header">
+          <span class="trace-step-badge" id="trace-badge">STEP</span>
+          <span class="trace-card-title" id="trace-step-title">—</span>
+          <span class="trace-part-label" id="trace-part-label"></span>
+        </div>
+        <div class="trace-card-body">
+          <div class="trace-col">
+            <div class="trace-col-label">📥 INPUT</div>
+            <div class="trace-data" id="trace-input">—</div>
+          </div>
+          <div class="trace-col">
+            <div class="trace-col-label">📤 OUTPUT <span class="trace-arrow">→</span></div>
+            <div class="trace-data" id="trace-output">—</div>
+          </div>
+        </div>
+        <div class="trace-explain" id="trace-explain">—</div>
+      </div>
+
+    </div>
+
+    <div id="detail" class="hidden">
+      <div id="detail-inner">
+        <span class="detail-close" onclick="closeDetail()">✕</span>
+        <div id="detail-content"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+const PARTS = [
+  { id: 1, name: 'Tiny Transformer', color: '#3b82f6', steps: '1–9', desc: 'Tokenization → Attention → Forward pass' },
+  { id: 2, name: 'Sampling',         color: '#8b5cf6', steps: '10–16', desc: 'Greedy, temperature, top-k/p, generation loop' },
+  { id: 3, name: 'KV Cache',         color: '#14b8a6', steps: '17–24', desc: 'Prefill + decode with cached keys/values' },
+  { id: 4, name: 'Paged Attention',  color: '#f97316', steps: '25–33', desc: 'Non-contiguous page pool for memory efficiency' },
+  { id: 5, name: 'Continuous Batching', color: '#ec4899', steps: '34–42', desc: 'Iteration-level scheduler, mixed-length batches' },
+  { id: 6, name: 'Streaming API',    color: '#22c55e', steps: '43–51', desc: 'FastAPI SSE + request/response models' },
+  { id: 7, name: 'Benchmarks',       color: '#eab308', steps: '52–58', desc: 'Latency, throughput, concurrency metrics' },
+];
+
+// status: 'done' | 'partial' | 'todo'
+const STEPS = [
+  // Part 1
+  { id:1,  part:1, name:'build_token_vocab', brief:'Build token↔id dicts from whitespace-split text', status:'done',
+    theory:'The very first step of any LLM pipeline. We split raw text on whitespace and assign each unique token a numeric ID, creating two dictionaries: token_to_id (str→int) and id_to_token (int→str). This is a character-free, word-level vocabulary — no subword tokenization like BPE or WordPiece. Simple to understand and perfect for learning the pipeline.',
+    insight:'Real models use BPE (GPT-2) or SentencePiece (LLaMA) to handle unseen words and reduce vocab size. Here we keep it simple.',
+    pseudocode:'words = text.split()\nfor each unique word:\n  token_to_id[word] = next_id\n  id_to_token[next_id] = word',
+    calls:[], calledBy:[2,16,37,47,49] },
+
+  { id:2,  part:1, name:'encode', brief:'Convert a string into a list of token IDs', status:'done',
+    theory:'Takes a raw string and maps each whitespace-delimited token to its integer ID using the token_to_id dict built in Step 1. The output is a list[int] — the numeric representation the model actually processes. If a token is not in the vocab, it raises a KeyError (no OOV handling in this simple version).',
+    insight:'In production, unknown tokens are handled by a special [UNK] token or subword fallback. Encoding is the bridge from human-readable text to model-processable tensors.',
+    pseudocode:'return [token_to_id[t] for t in text.split()]',
+    calls:[1], calledBy:[16,37,47,49] },
+
+  { id:3,  part:1, name:'decode', brief:'Convert token IDs back to a space-joined string', status:'done',
+    theory:'The inverse of encode. Maps each integer ID back to its string token via id_to_token, then joins them with spaces. Uses rstrip() to strip the trailing space added by the naive join loop. This is the final step in any generation pipeline — turning model output back into human-readable text.',
+    insight:'Notice the rstrip() call — a small but important detail. Without it, every decoded string has a trailing space, which breaks equality checks in tests.',
+    pseudocode:'tokens = [id_to_token[id] for id in ids]\nreturn " ".join(tokens)',
+    calls:[1], calledBy:[16,47,49] },
+
+  { id:4,  part:1, name:'build_causal_mask', brief:'Upper-triangular bool mask blocking future tokens', status:'done',
+    theory:'Creates an (seq_len × seq_len) boolean matrix where True = "this position is masked (future)". The upper triangle is True, the lower triangle (including diagonal) is False. When applied to attention scores before softmax, masked positions get -∞, becoming 0 after softmax — effectively preventing any token from attending to tokens that come after it.',
+    insight:'This is what makes GPT-style models autoregressive. Without this mask, every token would see the entire sequence including the answer, making training trivially easy and generation impossible.',
+    pseudocode:'return torch.ones(seq_len, seq_len).triu(diagonal=1).bool()\n# True at [i,j] when j > i (future position)',
+    calls:[], calledBy:[9] },
+
+  { id:5,  part:1, name:'scaled_dot_product_attention', brief:'Core attention: softmax(QKᵀ/√d_k)·V', status:'done',
+    theory:'The heart of the transformer. Three steps:\n1. Compute raw scores: QKᵀ (dot product of queries and keys)\n2. Scale by 1/√d_k — without this, large d_k causes dot products to grow large, pushing softmax into flat gradient regions\n3. Apply optional causal mask (fill future positions with -1e9)\n4. Softmax → attention weights\n5. Weighted sum of values: weights @ V',
+    insight:'The scaling factor √d_k is critical. If d_k=64, we divide by 8. The paper "Attention Is All You Need" showed this stabilizes training significantly.',
+    pseudocode:'scores = Q @ K.transpose(-2,-1) / sqrt(Q.size(-1))\nif mask: scores = scores.masked_fill(mask, -1e9)\nweights = softmax(scores, dim=-1)\nreturn weights @ V',
+    calls:[], calledBy:[6,20,33] },
+
+  { id:6,  part:1, name:'multi_head_attention_forward', brief:'Project into Q/K/V, split heads, attend, merge', status:'todo',
+    theory:'Multi-head attention runs scaled_dot_product_attention in parallel across h "heads". Each head learns to attend to different aspects of the input (syntax, semantics, coreference, etc.).\n\nSteps:\n1. Linear project x → Q, K, V (each shape: B×T×d_model)\n2. Reshape to B×h×T×d_k (split d_model into h heads)\n3. Run attention per head (or batched)\n4. Concatenate heads back: B×T×d_model\n5. Final linear projection W_o',
+    insight:'Each head has d_k = d_model / n_heads dimensions. With d_model=512 and 8 heads, each head sees 64 dimensions. This lets the model attend to information from different representation subspaces simultaneously.',
+    pseudocode:'Q = x @ W_q  # B,T,d_model\nQ = Q.view(B, T, n_heads, d_k).transpose(1,2)  # B,h,T,d_k\n# same for K, V\nout = scaled_dot_product_attention(Q,K,V,mask)\nout = out.transpose(1,2).reshape(B,T,d_model)\nreturn out @ W_o',
+    calls:[5], calledBy:[8] },
+
+  { id:7,  part:1, name:'feed_forward_block', brief:'Two-layer FFN: Linear → GELU → Linear', status:'todo',
+    theory:'The position-wise feed-forward network (FFN) applied after attention in every transformer block. It is a simple MLP: expand dimensionality with W1 (typically 4× the model dimension), apply GELU activation, compress back with W2.\n\nGELU (Gaussian Error Linear Unit) is smoother than ReLU and empirically works better in transformers. It approximates x·Φ(x) where Φ is the CDF of the standard normal distribution.',
+    insight:'The FFN is applied to each position independently and identically — hence "position-wise". It acts as a key-value memory store, complementing attention\'s role as pattern matching.',
+    pseudocode:'hidden = F.gelu(x @ W1 + b1)  # expand: d_model → 4*d_model\nreturn hidden @ W2 + b2         # compress: 4*d_model → d_model',
+    calls:[], calledBy:[8] },
+
+  { id:8,  part:1, name:'transformer_block', brief:'Pre-LN: LN→MHA→residual, LN→FFN→residual', status:'todo',
+    theory:'A single transformer layer using Pre-LayerNorm (Pre-LN) architecture. Unlike the original paper (Post-LN), Pre-LN normalizes before each sub-layer, which improves training stability.\n\nFlow:\n1. LayerNorm(x) → Multi-Head Attention + residual (x = x + attn(ln1(x)))\n2. LayerNorm(x) → Feed-Forward + residual (x = x + ffn(ln2(x)))\n\nResidual connections allow gradients to flow directly through the network without vanishing.',
+    insight:'Pre-LN is used by GPT-2 onwards. It removes the need for learning rate warm-up and makes training more stable. The residual stream is the "main highway" of information flow.',
+    pseudocode:'x = x + MHA(LayerNorm(x), mask)  # attention branch\nx = x + FFN(LayerNorm(x))         # FFN branch\nreturn x',
+    calls:[6,7], calledBy:[9] },
+
+  { id:9,  part:1, name:'gpt_model_forward', brief:'Embed → N blocks → LN → unembed to logits', status:'todo',
+    theory:'The full GPT forward pass. It orchestrates all transformer components:\n\n1. Token embedding: look up each token ID in wte (word token embeddings)\n2. Position embedding: add wpe[:seq_len] (learned position encodings)\n3. Build causal mask once (reused across all blocks)\n4. Stack of N transformer blocks\n5. Final LayerNorm\n6. Unembed: multiply by wteᵀ to get vocab-size logits (weight tying — shares weights with embedding)\n\nThe output is a (B, T, vocab_size) tensor of unnormalized log-probabilities.',
+    insight:'Weight tying (using wte.T as the output projection) reduces parameters and often improves performance. The intuition: if the embedding of token X and the output direction for token X share the same weights, the model\'s input and output representations are consistent.',
+    pseudocode:'x = wte[token_ids] + wpe[:seq_len]\nmask = build_causal_mask(seq_len)\nfor block in blocks:\n  x = transformer_block(x, block.attn, block.ffn, n_heads, mask)\nx = LayerNorm(x)\nreturn x @ wte.T  # logits',
+    calls:[4,8], calledBy:[15,16] },
+
+  // Part 2
+  { id:10, part:2, name:'greedy_sample', brief:'Return argmax token id (deterministic)', status:'todo',
+    theory:'The simplest decoding strategy: always pick the token with the highest logit (probability). Deterministic, fast, but tends to produce repetitive and generic output because it always follows the single most likely path.',
+    insight:'Greedy decoding is optimal only in very simple cases. For language, beam search or sampling almost always produces better output. Useful as a baseline.',
+    pseudocode:'return int(logits.argmax(-1))',
+    calls:[], calledBy:[] },
+
+  { id:11, part:2, name:'temperature_scaling', brief:'Divide logits by T to flatten/sharpen distribution', status:'todo',
+    theory:'Temperature T controls the "sharpness" of the probability distribution before sampling:\n• T < 1.0: sharper distribution → model becomes more confident, less creative\n• T = 1.0: unchanged distribution\n• T > 1.0: flatter distribution → more uniform probabilities, more random/creative output\n\nApplied by simply dividing logits by T before softmax.',
+    insight:'Temperature is called such by analogy to thermodynamics. High temperature = high entropy = more randomness. In practice, T=0.7–0.9 often gives a good creative/coherent balance.',
+    pseudocode:'return logits / max(temperature, 1e-8)',
+    calls:[], calledBy:[14] },
+
+  { id:12, part:2, name:'top_k_filter', brief:'Zero out all logits except the top-k values', status:'todo',
+    theory:'Top-k sampling limits the model to only considering the k most probable next tokens. All other tokens are set to -∞ (→ 0 after softmax). This prevents sampling from very low-probability tokens (which often produce incoherent text) while still allowing controlled randomness.',
+    insight:'k=50 is a common default. Too small: output too conservative. Too large: starts including gibberish tokens. Often combined with top-p for best results.',
+    pseudocode:'kth_val = logits.topk(k).values[..., -1, None]\nreturn logits.masked_fill(logits < kth_val, float("-inf"))',
+    calls:[], calledBy:[14] },
+
+  { id:13, part:2, name:'top_p_nucleus_filter', brief:'Keep smallest token set whose cumulative prob ≥ p', status:'todo',
+    theory:'Nucleus sampling (Holtzman et al., 2020). Instead of a fixed k, it dynamically selects the smallest set of tokens whose cumulative probability exceeds threshold p.\n\nSteps:\n1. Sort tokens by probability (descending)\n2. Compute cumulative sum\n3. Mask tokens beyond the nucleus (cumsum - current_prob > p)\n\nThis adapts to the model\'s confidence: when the model is certain, the nucleus is small; when uncertain, it\'s larger.',
+    insight:'p=0.9 or p=0.95 are common defaults. Top-p is generally preferred over top-k because it naturally handles cases where the distribution is either peaked or flat.',
+    pseudocode:'sorted_logits, sorted_idx = logits.sort(descending=True)\nprobs = softmax(sorted_logits)\ncumprobs = probs.cumsum(-1)\n# remove tokens where cumsum - prob > p\nfiltered = cumprobs - probs > p\nsorted_logits[filtered] = -inf\n# scatter back to original order',
+    calls:[], calledBy:[14] },
+
+  { id:14, part:2, name:'sample_next_token', brief:'Combine temp + top-k + top-p, then multinomial sample', status:'todo',
+    theory:'Combines all three sampling strategies into one function:\n1. Apply temperature scaling (reshapes distribution)\n2. Apply top-k filter (if k > 0)\n3. Apply top-p / nucleus filter (if p < 1.0)\n4. Convert logits to probabilities via softmax\n5. Sample one token using torch.multinomial\n\nThis is the core of stochastic text generation.',
+    insight:'The order matters: temperature first (rescales), then filtering (restricts the pool), then sampling. Applying filters before temperature would change which tokens get cut off.',
+    pseudocode:'logits = temperature_scaling(logits, T)\nif top_k > 0: logits = top_k_filter(logits, k)\nif top_p < 1.0: logits = top_p_nucleus_filter(logits, p)\nprobs = softmax(logits)\nreturn int(torch.multinomial(probs, 1))',
+    calls:[11,12,13], calledBy:[15,22,39,47] },
+
+  { id:15, part:2, name:'autoregressive_generate', brief:'Generation loop: forward → sample → append → repeat', status:'todo',
+    theory:'The core generation loop. At each step:\n1. Run the full model forward pass on the current sequence\n2. Take only the last token\'s logits (position -1)\n3. Sample the next token via sample_next_token\n4. Append the new token to the input sequence\n5. Stop if EOS token is generated or max_new_tokens reached\n\nThis is O(n²) in attention because the sequence grows by 1 token each step — which is why KV cache (Part 3) is so important.',
+    insight:'Without KV cache, generating 100 tokens requires 100 forward passes where the i-th pass processes i tokens. Total work ≈ n²/2. With KV cache, it becomes O(n).',
+    pseudocode:'for _ in range(max_new_tokens):\n  logits = model_forward(input_ids)  # full sequence\n  next_id = sample_next_token(logits[-1], T, k, p)\n  input_ids = cat([input_ids, [next_id]])\n  if next_id == eos: break\nreturn input_ids',
+    calls:[14], calledBy:[16,23,49] },
+
+  { id:16, part:2, name:'generate_with_prompt', brief:'End-to-end: encode → generate → decode', status:'todo',
+    theory:'The high-level user-facing generation function. It glues together the three stages of a complete LLM inference call:\n1. encode: raw string → token IDs\n2. autoregressive_generate: IDs → extended IDs\n3. decode: extended IDs → output string\n\nThis is what a production endpoint would wrap.',
+    insight:'Notice this function owns the full pipeline: text in, text out. All the complexity of tokenization, sampling, and decoding is hidden behind a clean interface.',
+    pseudocode:'ids = encode(prompt, token_to_id)\ninput_ids = torch.tensor(ids)\noutput_ids = autoregressive_generate(model_fwd, input_ids, max_new_tokens)\nreturn decode(output_ids.tolist(), id_to_token)',
+    calls:[2,15,3], calledBy:[] },
+
+  // Part 3
+  { id:17, part:3, name:'allocate_kv_cache_buffers', brief:'Pre-allocate zero K/V tensors for each layer', status:'todo',
+    theory:'Allocates the key-value cache as a list of per-layer dicts. Each dict holds two tensors: k and v, both shaped (batch_size, n_heads, max_seq_len, d_k), pre-filled with zeros.\n\nPre-allocation is critical for performance: it avoids memory allocation on each forward pass and enables in-place writes at specific positions.',
+    insight:'The max_seq_len dimension is what limits the context window. If you need 2048 token context, you must allocate for 2048 positions upfront. This is a major memory cost in large models.',
+    pseudocode:'return [\n  {"k": torch.zeros(B,H,max_len,d_k),\n   "v": torch.zeros(B,H,max_len,d_k)}\n  for _ in range(n_layers)\n]',
+    calls:[], calledBy:[45] },
+
+  { id:18, part:3, name:'write_kv_to_cache', brief:'Write K/V at step position in the cache (in-place)', status:'todo',
+    theory:'Writes the key and value tensors for a single decoding step into the pre-allocated cache at position `step`. This is an in-place operation — no memory allocation occurs.\n\ncache[layer_idx][\'k\'][:, :, step, :] = k\n\nAfter the prefill phase, each decode step writes just one new row to the cache.',
+    insight:'In-place writes are what make KV cache memory-efficient. Compare to naive generation which creates a new K/V tensor of growing size on every step.',
+    pseudocode:'cache[layer_idx]["k"][:,:,step,:] = k\ncache[layer_idx]["v"][:,:,step,:] = v',
+    calls:[], calledBy:[21,22] },
+
+  { id:19, part:3, name:'read_kv_from_cache', brief:'Read first current_len entries from cache', status:'todo',
+    theory:'Retrieves the accumulated key and value tensors for a given layer, up to the current sequence length. Returns slices: cache[layer_idx][\'k\'][:, :, :current_len, :] and same for v.\n\nDuring decoding, current_len grows by 1 each step, so we read a slightly larger slice each time.',
+    insight:'The slice operation here is O(1) in PyTorch — it creates a view, not a copy. This is important for performance.',
+    pseudocode:'k = cache[layer_idx]["k"][:,:,:current_len,:]\nv = cache[layer_idx]["v"][:,:,:current_len,:]\nreturn k, v',
+    calls:[], calledBy:[20] },
+
+  { id:20, part:3, name:'attention_with_kv_cache', brief:'Attend using cached K/V — no causal mask needed', status:'todo',
+    theory:'During cached decoding, the query q is for a single new token, while K and V contain all previous tokens from the cache. We call scaled_dot_product_attention(q, k_cached, v_cached) — no causal mask is needed because the cached tokens are all in the past; there are no future tokens in the cache.',
+    insight:'This is the key insight of KV cache: the new token can attend to all cached tokens, but since those are all previous tokens, causality is already satisfied by the cache\'s construction.',
+    pseudocode:'k, v = read_kv_from_cache(cache, layer_idx, current_len)\nreturn scaled_dot_product_attention(q, k, v)  # no mask!',
+    calls:[19,5], calledBy:[] },
+
+  { id:21, part:3, name:'prefill_phase', brief:'Run full prompt through model to populate KV cache', status:'todo',
+    theory:'The prefill phase processes the entire input prompt in one forward pass. This:\n1. Runs the model on all input_ids at once (efficient — uses full parallelism of the transformer)\n2. Fills the KV cache with keys/values for all prompt positions\n3. Returns the logits at the last token position (to start generation)\n\nPrefill is computationally intensive but done only once.',
+    insight:'Prefill is compute-bound (lots of FLOPs, good GPU utilization). Decode is memory-bandwidth-bound (one token at a time, just reading weights). This distinction drives many optimization strategies.',
+    pseudocode:'logits = model_forward_with_cache(input_ids, cache, start_pos=0)\nprompt_len = input_ids.shape[-1]\nreturn logits[:, -1, :], prompt_len',
+    calls:[18], calledBy:[24] },
+
+  { id:22, part:3, name:'decode_phase', brief:'Single decode step: forward one token, sample next', status:'todo',
+    theory:'Each decode step after prefill:\n1. Run model forward on a single token tensor [[last_token_id]]\n2. The model writes new K/V to cache via model_forward_with_cache\n3. Sample the next token from the output logits\n4. Return next_id for the caller to feed back in the next step\n\nThis O(1)-per-step (in sequence length, not model size) is the whole point of KV cache.',
+    insight:'The decode phase is memory-bandwidth-bound: we read all model weights every step but do very little compute. This is why KV cache trades memory for speed.',
+    pseudocode:'token = torch.tensor([[last_token_id]])\nlogits = model_forward_with_cache(token, cache, start_pos=step)\nnext_id = sample_next_token(logits[0,-1], temperature)\nreturn next_id, logits',
+    calls:[14,18], calledBy:[24] },
+
+  { id:23, part:3, name:'benchmark_no_cache', brief:'Time n_steps of generation without KV cache', status:'todo',
+    theory:'Baseline benchmark that measures generation speed without KV cache. Runs autoregressive_generate for n_steps and records total time. Returns tokens_per_sec = n_steps / elapsed.\n\nThis gives the baseline to compare against the cached version in Step 24.',
+    insight:'Without cache, each step processes a sequence that grows by 1 token. Step i processes i tokens. Total work ∝ n² — you\'ll see this benchmark get much slower for longer sequences.',
+    pseudocode:'t0 = time.perf_counter()\nautoregressive_generate(model, input_ids, n_steps)\nelapsed = time.perf_counter() - t0\nreturn {tokens_per_sec: n_steps/elapsed, ...}',
+    calls:[15], calledBy:[24] },
+
+  { id:24, part:3, name:'benchmark_kv_cache_speedup', brief:'Compare generation time with vs. without KV cache', status:'todo',
+    theory:'Runs both generation strategies and computes the speedup factor:\n• Without cache: calls benchmark_no_cache (Step 23)\n• With cache: prefill_phase (Step 21) + n_new_tokens × decode_phase (Step 22)\n\nspeedup_factor = time_no_cache / time_with_cache\n\nFor sequences of length 100+, you typically see 5-20× speedup.',
+    insight:'The speedup grows with sequence length. For short sequences, cache overhead may dominate. For long sequences (512+ tokens), KV cache is indispensable.',
+    pseudocode:'t_no_cache = benchmark_no_cache(...)\nt_with_cache = prefill + N * decode_step\nspeedup = t_no_cache / t_with_cache',
+    calls:[23,21,22], calledBy:[] },
+
+  // Part 4
+  { id:25, part:4, name:'simulate_naive_allocation', brief:'Show memory waste from padding all seqs to max_len', status:'todo',
+    theory:'In naive KV cache allocation, every sequence reserves memory for max_seq_len tokens regardless of its actual length. If max_seq_len=2048 and a request only uses 50 tokens, we waste 1998 token-slots of memory.\n\nThis function quantifies that waste: wasted = total_allocated - total_used; waste_pct = wasted / total_allocated × 100.',
+    insight:'In production, memory waste from padding typically reaches 60-80% for mixed-length workloads. This is the core motivation for Paged Attention.',
+    pseudocode:'total_allocated = len(seqs) * max_seq_len\ntotal_used = sum(seq_lengths)\nwasted = total_allocated - total_used\nwaste_pct = 100 * wasted / total_allocated',
+    calls:[], calledBy:[] },
+
+  { id:26, part:4, name:'get_page_size', brief:'Return fixed page size constant (16 tokens/page)', status:'todo',
+    theory:'Returns the constant page size of 16 tokens. Inspired by OS virtual memory paging, Paged Attention divides the KV cache into fixed-size blocks ("pages"). Each page stores key-value pairs for exactly page_size tokens.\n\nSmaller pages = less internal fragmentation but higher overhead. 16 is a common sweet spot.',
+    insight:'The choice of 16 aligns with GPU memory access patterns (warp size, cache lines). vLLM, which popularized Paged Attention, uses 16 as default.',
+    pseudocode:'return 16',
+    calls:[], calledBy:[28,30,31] },
+
+  { id:27, part:4, name:'create_block_table', brief:'Map seq_id → list of page indices (empty initially)', status:'todo',
+    theory:'Creates an empty block table: a dictionary mapping each sequence ID to a list of page indices it owns. Initially all lists are empty — pages are assigned on demand as the sequence grows.\n\nThe block table is the indirection layer: given a sequence and a token position, you can find the physical page that holds its KV data.',
+    insight:'This is directly analogous to a page table in OS virtual memory. The block table maps logical token positions to physical cache locations.',
+    pseudocode:'return {seq_id: [] for seq_id in range(n_sequences)}',
+    calls:[], calledBy:[41] },
+
+  { id:28, part:4, name:'allocate_page_pool', brief:'Pre-allocate K/V page tensors + free page list', status:'todo',
+    theory:'Allocates the global page pool:\n• k_pages: (n_layers, n_pages, n_heads, page_size, d_k)\n• v_pages: same shape\n• free_pages: list of all page indices [0, 1, ..., n_pages-1]\n\nThe pool is shared across all sequences. Pages are allocated from free_pages and returned to free_pages when sequences finish.',
+    insight:'Unlike per-sequence pre-allocation (Step 17), the page pool is global. This allows memory from completed sequences to be immediately reused for new sequences — eliminating fragmentation.',
+    pseudocode:'k_pages = torch.zeros(n_layers, n_pages, n_heads, page_size, d_k)\nv_pages = torch.zeros_like(k_pages)\nfree_pages = list(range(n_pages))\nreturn {k_pages, v_pages, free_pages}',
+    calls:[26], calledBy:[45] },
+
+  { id:29, part:4, name:'assign_page_to_sequence', brief:'Pop a free page and assign to seq_id block table', status:'todo',
+    theory:'Called when a sequence needs a new page (its current page is full or it\'s brand new). Pops the first free page index from pool[\'free_pages\'] and appends it to block_table[seq_id].\n\nThis is the page allocation operation. If free_pages is empty, we\'re out of memory (OOM).',
+    insight:'Page assignment happens dynamically during generation. A sequence doesn\'t know upfront how long it will be — pages are assigned one at a time as needed.',
+    pseudocode:'page_idx = pool["free_pages"].pop(0)\nblock_table[seq_id].append(page_idx)\nreturn page_idx',
+    calls:[], calledBy:[] },
+
+  { id:30, part:4, name:'write_kv_to_page', brief:'Write K/V for a token into its page and slot', status:'todo',
+    theory:'Writes key/value vectors for a single token at position token_pos into the page pool. The calculation:\n• page_number = token_pos // page_size (which page?)\n• slot = token_pos % page_size (which slot within that page?)\n• page_idx = block_table[seq_id][page_number] (physical page location)\n\nThen writes k/v to pool[\'k_pages\'][layer, page_idx, :, slot, :].',
+    insight:'This indirection (logical position → page_number → slot → physical address) is what enables non-contiguous memory allocation. Multiple sequences can share the same physical memory pool without copying.',
+    pseudocode:'page_num = token_pos // page_size\nslot = token_pos % page_size\npage_idx = block_table[seq_id][page_num]\npool["k_pages"][layer, page_idx, :, slot, :] = k',
+    calls:[26], calledBy:[39,47] },
+
+  { id:31, part:4, name:'read_kv_via_block_table', brief:'Gather non-contiguous pages to reconstruct K/V', status:'todo',
+    theory:'Reconstructs the full K/V tensors for a sequence by gathering data from potentially non-contiguous pages. Iterates over each page in block_table[seq_id], reading the appropriate slots, and concatenates the chunks.\n\nFor the last page, only reads up to (seq_len - i*page_size) slots (the page may be partially filled).',
+    insight:'This gather operation is the main overhead of paged attention vs. contiguous KV cache. In practice, modern GPUs handle this well, and the memory savings are worth it.',
+    pseudocode:'for i, page_idx in enumerate(block_table[seq_id]):\n  slots = min(page_size, seq_len - i*page_size)\n  k_chunks.append(pool["k_pages"][layer, page_idx, :, :slots, :])\nreturn cat(k_chunks, dim=1), cat(v_chunks, dim=1)',
+    calls:[26], calledBy:[33,47] },
+
+  { id:32, part:4, name:'free_pages_on_completion', brief:'Return all seq pages to the free pool', status:'todo',
+    theory:'When a sequence finishes generating (hits EOS or max_tokens), all its pages must be returned to the free pool so other sequences can use them. Pops the sequence from the block table and extends free_pages with all its page indices.',
+    insight:'This is the "free()" call in the page allocator. Without this, completed sequences would hold memory indefinitely, eventually exhausting the pool.',
+    pseudocode:'pages = block_table.pop(seq_id, [])\npool["free_pages"].extend(pages)\nreturn len(pages)',
+    calls:[], calledBy:[40] },
+
+  { id:33, part:4, name:'attention_with_paged_kv', brief:'Attend using paged K/V storage', status:'todo',
+    theory:'Paged version of attention_with_kv_cache. Instead of reading from a contiguous cache buffer, it calls read_kv_via_block_table to gather K/V from non-contiguous pages, then calls scaled_dot_product_attention.\n\nFunctionally identical to Step 20, but backed by the page pool instead of a per-sequence buffer.',
+    insight:'From the attention computation\'s perspective, K and V look contiguous after the gather. The paging complexity is fully encapsulated in read_kv_via_block_table.',
+    pseudocode:'k, v = read_kv_via_block_table(pool, block_table, seq_id, seq_len, layer)\nreturn scaled_dot_product_attention(q, k, v)',
+    calls:[31,5], calledBy:[] },
+
+  // Part 5
+  { id:34, part:5, name:'simulate_static_batching', brief:'Compute wasted compute % from padding to max_len', status:'todo',
+    theory:'Static batching pads all sequences in a batch to the length of the longest sequence. Every sequence runs for max_seq_len steps regardless of when it finishes.\n\nWasted compute = steps spent on padding tokens. Computed as: wasted_pct = (total_compute - useful_compute) / total_compute × 100.',
+    insight:'For a batch where lengths range from 10 to 200 tokens, the 10-token sequence wastes 95% of its allocated compute. This is the motivating problem for continuous batching.',
+    pseudocode:'total_compute = len(seqs) * max_seq_len\nuseful_compute = sum(seq_lengths)\nwasted_pct = 100 * (total_compute - useful_compute) / total_compute',
+    calls:[], calledBy:[] },
+
+  { id:35, part:5, name:'build_request_queue', brief:'Wrap request list in a Queue for the scheduler', status:'todo',
+    theory:'Creates a thread-safe queue.Queue from a list of incoming requests. The continuous batching scheduler reads from this queue to pull in new requests whenever there is capacity in the running batch.',
+    insight:'Using queue.Queue provides thread safety for concurrent producers (incoming HTTP requests) and the consumer (the inference loop). In production this might be an async queue (asyncio.Queue).',
+    pseudocode:'q = queue.Queue()\nfor r in requests: q.put(r)\nreturn q',
+    calls:[], calledBy:[41] },
+
+  { id:36, part:5, name:'build_running_batch', brief:'Return empty batch dict {seq_id: state}', status:'todo',
+    theory:'Initializes the running batch as an empty dict. Each entry will map a sequence ID to its state: {\'input_ids\': [...], \'step\': int, \'request\': dict}.\n\nThe running batch is the central data structure of the continuous batching loop — it tracks all active sequences.',
+    insight:'A dict (not a list) is used so sequences can be added and removed at arbitrary positions without shifting indices.',
+    pseudocode:'return {}',
+    calls:[], calledBy:[41] },
+
+  { id:37, part:5, name:'add_to_batch', brief:'Insert new sequence state into running batch', status:'todo',
+    theory:'Adds a new request to the running batch. Encodes the prompt to token IDs (Step 2), then stores the initial state: input_ids (the prompt tokens), step=0 (starting at position 0), and the original request dict.',
+    insight:'The step counter tracks how many decode steps have been taken for this sequence — it\'s used to write to the correct cache position.',
+    pseudocode:'token_ids = encode(request["prompt"], token_to_id)\nbatch[seq_id] = {input_ids: token_ids, step: 0, request: request}',
+    calls:[2], calledBy:[38] },
+
+  { id:38, part:5, name:'iteration_level_scheduler', brief:'Fill batch up to max_batch_size from the queue', status:'todo',
+    theory:'The core of continuous batching\'s scheduling. At the start of each iteration, it fills the running batch with new requests from the queue up to max_batch_size.\n\nThis is "iteration-level" scheduling: new requests can be added after every single decode step, not just at batch boundaries. Whenever a sequence finishes and frees a slot, a new sequence immediately fills it.',
+    insight:'This is what eliminates the "stranded compute" of static batching. In static batching, if one sequence finishes early, its GPU slot is wasted until the whole batch is done.',
+    pseudocode:'while len(batch) < max_batch_size and not q.empty():\n  request = q.get()\n  seq_id = max(batch.keys(), default=-1) + 1\n  add_to_batch(batch, request, seq_id)',
+    calls:[37], calledBy:[41] },
+
+  { id:39, part:5, name:'batched_decode_step', brief:'Run one decode step for every sequence in batch', status:'todo',
+    theory:'Runs one decode step for all sequences currently in the running batch. For each sequence:\n1. Forward pass on the single last token\n2. Write K/V to the page pool (Step 30)\n3. Sample the next token (Step 14)\n4. Append next token to sequence\'s input_ids\n5. Increment step counter\n\nReturns a dict mapping seq_id → next_token_id.',
+    insight:'In a real implementation, sequences are padded to the same length and processed in a single batched GPU operation. Here we iterate for clarity.',
+    pseudocode:'for seq_id, state in batch.items():\n  logits = model_forward(state["input_ids"][-1:])\n  next_id = sample_next_token(logits[-1])\n  write_kv_to_page(pool, block_table, seq_id, state["step"], ...)\n  state["input_ids"].append(next_id)\n  state["step"] += 1',
+    calls:[30,14], calledBy:[41] },
+
+  { id:40, part:5, name:'handle_sequence_completion', brief:'Remove finished sequences, free their pages', status:'todo',
+    theory:'After each decode step, checks every active sequence for completion. A sequence is complete if:\n• Its last token == eos_token_id, OR\n• It has reached its request\'s max_tokens limit\n\nFor completed sequences: frees their pages (Step 32) and removes them from the running batch.',
+    insight:'Completion detection and memory freeing happen together. This ensures the freed pages are immediately available for the next call to the scheduler (Step 38).',
+    pseudocode:'for seq_id, state in list(batch.items()):\n  if last_token == eos or step >= max_tokens:\n    free_pages_on_completion(pool, block_table, seq_id)\n    del batch[seq_id]',
+    calls:[32], calledBy:[41] },
+
+  { id:41, part:5, name:'run_continuous_batching_loop', brief:'Full CB loop until all requests are served', status:'todo',
+    theory:'Orchestrates the entire continuous batching pipeline:\n1. Initialize empty running batch and block table\n2. Loop while queue has requests OR batch is non-empty:\n   a. Fill batch from queue (Step 38)\n   b. Run one decode step for all active sequences (Step 39)\n   c. Remove and collect completed sequences (Step 40)\n3. Return list of completed sequence IDs\n\nThis loop processes requests of varying lengths efficiently without wasting compute.',
+    insight:'The key loop invariant: after each iteration, the batch is as full as possible with active sequences, and any completed sequences have been replaced with new ones from the queue.',
+    pseudocode:'batch = build_running_batch()\nblock_table = create_block_table(0)\nwhile not q.empty() or batch:\n  iteration_level_scheduler(q, batch, max_batch_size)\n  batched_decode_step(model, batch, pool, block_table)\n  done = handle_sequence_completion(batch, pool, block_table, eos)\n  completed.extend(done)',
+    calls:[36,27,38,39,40], calledBy:[] },
+
+  { id:42, part:5, name:'benchmark_throughput', brief:'Compute req/sec and tok/sec from completed batch', status:'todo',
+    theory:'Calculates throughput metrics from the completed sequences list and total elapsed time:\n• requests_per_sec: total_requests / total_time\n• tokens_per_sec: total_tokens / total_time\n\nThese are the primary metrics for evaluating inference server performance.',
+    insight:'tokens_per_sec is the most commonly cited LLM serving metric. A single A100 GPU running a 7B model typically achieves 1000-3000 tokens/sec for generation.',
+    pseudocode:'total_requests = len(completed)\ntotal_tokens = sum(len(s["output_ids"]) for s in completed)\nreturn {requests_per_sec: total_requests/time, tokens_per_sec: total_tokens/time}',
+    calls:[], calledBy:[] },
+
+  // Part 6
+  { id:43, part:6, name:'GenerateRequest', brief:'Pydantic model for inference request validation', status:'done',
+    theory:'A Pydantic BaseModel that validates and serializes incoming generation requests. Fields:\n• prompt: str — the input text\n• max_tokens: int = 100 — max new tokens to generate\n• temperature: float = 1.0 — sampling temperature\n• top_k: int = 0 — top-k filter (0 = disabled)\n• top_p: float = 1.0 — nucleus filter (1.0 = disabled)\n\nPydantic automatically validates types and applies defaults.',
+    insight:'Using Pydantic with FastAPI gives you automatic request validation, clear error messages, and auto-generated OpenAPI docs — all for free.',
+    pseudocode:'class GenerateRequest(BaseModel):\n  prompt: str\n  max_tokens: int = 100\n  temperature: float = 1.0\n  top_k: int = 0\n  top_p: float = 1.0',
+    calls:[], calledBy:[47,48,49] },
+
+  { id:44, part:6, name:'GenerateResponse', brief:'Pydantic response model with throughput helper', status:'partial',
+    theory:'Pydantic model for generation responses. Fields:\n• generated_text: str\n• tokens_generated: int\n• time_to_first_token: float (TTFT — key latency metric)\n• total_time: float\n• request_id: str (UUID)\n\nIncludes a tokens_per_second() method that computes throughput from the stored timing fields.',
+    insight:'TTFT (time to first token) and TPOT (time per output token) are the two key latency metrics for LLM serving. TTFT = user-perceived responsiveness. TPOT = streaming smoothness.',
+    pseudocode:'class GenerateResponse(BaseModel):\n  generated_text: str\n  tokens_generated: int\n  time_to_first_token: float\n  total_time: float\n  request_id: str\n  def tokens_per_second(self):\n    return self.tokens_generated / self.total_time',
+    calls:[], calledBy:[49] },
+
+  { id:45, part:6, name:'initialize_engine', brief:'Load model + tokenizer, allocate KV cache/page pool', status:'todo',
+    theory:'One-time initialization that sets up the global inference engine singleton:\n1. Load tokenizer (e.g., distilgpt2 via HuggingFace)\n2. Load model weights\n3. Allocate KV cache buffers (Step 17)\n4. Allocate page pool (Step 28)\n5. Store all state in _ENGINE dict\n\nThis is called once at server startup, not per request.',
+    insight:'The singleton pattern ensures expensive model loading happens only once. In production, this is done during container startup, not when the first request arrives.',
+    pseudocode:'global _ENGINE\ntokenizer = AutoTokenizer.from_pretrained(model_name)\nmodel = AutoModelForCausalLM.from_pretrained(model_name)\ncache = allocate_kv_cache_buffers(...)\npool = allocate_page_pool(...)\n_ENGINE = {model, tokenizer, cache, pool, max_batch_size}',
+    calls:[17,28], calledBy:[46] },
+
+  { id:46, part:6, name:'get_inference_engine', brief:'Return singleton engine (lazy-init if needed)', status:'todo',
+    theory:'Returns the global _ENGINE dict, calling initialize_engine() first if it hasn\'t been called yet. This is a lazy initialization pattern — the engine is created on first use, not at import time.',
+    insight:'Using a singleton avoids passing the engine through every function call. FastAPI dependency injection is a cleaner alternative in production.',
+    pseudocode:'global _ENGINE\nif _ENGINE is None:\n  initialize_engine()\nreturn _ENGINE',
+    calls:[45], calledBy:[47,48,49] },
+
+  { id:47, part:6, name:'streaming_token_generator', brief:'Async generator yielding one token string at a time', status:'todo',
+    theory:'An async generator function that yields tokens one at a time as they are generated. Used for Server-Sent Events (SSE) streaming:\n1. Encode the prompt (Step 2)\n2. Loop for max_tokens steps:\n   a. Forward pass on current token\n   b. Sample next token (Step 14)\n   c. Write K/V to page pool (Step 30)\n   d. Decode token to string (Step 3)\n   e. yield the token string\n3. yield \'[DONE]\' when finished\n\nThe client receives tokens as they arrive, not all at once.',
+    insight:'SSE streaming is what makes ChatGPT feel responsive — you see text appearing word by word. Without streaming, users would wait the full generation time before seeing any output.',
+    pseudocode:'async def streaming_token_generator(engine, request):\n  input_ids = encode(request.prompt, tokenizer)\n  for step in range(request.max_tokens):\n    next_id = sample_next_token(logits, ...)\n    yield decode([next_id], tokenizer)\n    if next_id == eos: break\n  yield "[DONE]"',
+    calls:[2,3,14,30,31], calledBy:[48] },
+
+  { id:48, part:6, name:'create_streaming_app', brief:'FastAPI app with POST /generate/stream SSE endpoint', status:'todo',
+    theory:'Creates a FastAPI application with a streaming endpoint using Server-Sent Events (SSE). The endpoint:\n1. Accepts a GenerateRequest\n2. Gets the engine (Step 46)\n3. Creates a streaming_token_generator (Step 47)\n4. Returns a StreamingResponse with media_type=\'text/event-stream\'\n\nClients receive tokens as they stream, not all at once.',
+    insight:'StreamingResponse wraps the async generator. FastAPI handles the SSE protocol (chunked transfer encoding). The client side can use EventSource API or fetch with stream reading.',
+    pseudocode:'app = FastAPI()\n@app.post("/generate/stream")\nasync def stream(req: GenerateRequest):\n  engine = get_inference_engine()\n  gen = streaming_token_generator(engine, req)\n  return StreamingResponse(gen, media_type="text/event-stream")',
+    calls:[46,47], calledBy:[] },
+
+  { id:49, part:6, name:'create_app', brief:'FastAPI app with POST /generate non-streaming endpoint', status:'todo',
+    theory:'Creates a FastAPI application with a standard (non-streaming) generation endpoint:\n1. Accepts a GenerateRequest\n2. Records start time\n3. Encodes prompt (Step 2)\n4. Generates with autoregressive_generate (Step 15)\n5. Decodes result (Step 3)\n6. Returns GenerateResponse with timing metadata\n\nDifference from streaming: client waits for complete output before receiving anything.',
+    insight:'Non-streaming is simpler to implement and test, but users see latency equal to full generation time. Streaming should be preferred for interactive use cases.',
+    pseudocode:'@app.post("/generate", response_model=GenerateResponse)\nasync def generate(req: GenerateRequest):\n  t0 = time.perf_counter()\n  ids = encode(req.prompt, tokenizer)\n  out_ids = autoregressive_generate(model, ids, req.max_tokens)\n  text = decode(out_ids.tolist(), tokenizer)\n  return GenerateResponse(text, time=perf_counter()-t0)',
+    calls:[46,2,15,3], calledBy:[] },
+
+  { id:50, part:6, name:'build_curl_command', brief:'Return curl command string to hit /generate', status:'todo',
+    theory:'Utility that constructs a curl command string for testing the /generate endpoint. Takes host, port, prompt, and max_tokens, serializes them to JSON, and formats the full curl invocation.',
+    insight:'Useful for generating test scripts or documentation. The returned string can be pasted directly into a terminal.',
+    pseudocode:'payload = json.dumps({"prompt": prompt, "max_tokens": max_tokens})\nreturn f"curl -X POST http://{host}:{port}/generate -H \'Content-Type: application/json\' -d \'{payload}\'"',
+    calls:[], calledBy:[] },
+
+  { id:51, part:6, name:'parse_sse_response', brief:'Parse SSE lines into a list of token strings', status:'todo',
+    theory:'Parses a raw Server-Sent Events response string into a list of token strings. Filters out:\n• Empty lines\n• The \'[DONE]\' sentinel\n• The \'data: \' prefix from each line\n\nReturns a list of token strings that can be joined to reconstruct the generated text.',
+    insight:'SSE format: each event is a line starting with "data: " followed by the payload. Multiple events are separated by blank lines. The "[DONE]" token signals end-of-stream.',
+    pseudocode:'tokens = []\nfor line in raw.splitlines():\n  if line.startswith("data: ") and "[DONE]" not in line:\n    tokens.append(line[len("data: "):])\nreturn tokens',
+    calls:[], calledBy:[] },
+
+  // Part 7
+  { id:52, part:7, name:'compute_metrics', brief:'mean/p50/p95/p99 latency + overall throughput', status:'todo',
+    theory:'Computes statistical latency percentiles for TTFT and TPOT lists using numpy:\n• mean: average latency\n• p50: median (50th percentile)\n• p95: 95th percentile (tail latency)\n• p99: 99th percentile (worst-case tail)\n• tokens_per_sec: total_tokens / total_time\n\nPercentiles are more informative than mean because LLM latency distributions often have heavy tails.',
+    insight:'SLOs (Service Level Objectives) are typically set on p95 or p99, not mean. A system with p50=100ms but p99=5000ms has a serious tail latency problem.',
+    pseudocode:'ttft_p95 = np.percentile(ttft_list, 95)\ntpot_p99 = np.percentile(tpot_list, 99)\ntokens_per_sec = total_tokens / total_time',
+    calls:[], calledBy:[56,58] },
+
+  { id:53, part:7, name:'generate_synthetic_requests', brief:'Generate n random prompt+max_tokens request dicts', status:'todo',
+    theory:'Creates synthetic benchmark requests with random prompt lengths and max_tokens values using numpy\'s default_rng for reproducibility. Prompts are strings of space-separated random integers (valid tokens for the toy vocab).\n\nReturns n dicts with keys \'prompt\' (str) and \'max_tokens\' (int).',
+    insight:'Using a seeded RNG (seed=42) makes benchmarks reproducible. Synthetic requests with varied lengths stress-test continuous batching and paging behavior.',
+    pseudocode:'rng = np.random.default_rng(seed)\nfor _ in range(n):\n  length = rng.integers(min_len, max_len)\n  tokens = rng.integers(0, 1000, size=length)\n  prompt = " ".join(str(t) for t in tokens)',
+    calls:[], calledBy:[] },
+
+  { id:54, part:7, name:'run_single_request_benchmark', brief:'Measure TTFT and TPOT for one request with warmup', status:'todo',
+    theory:'Benchmarks a single request by:\n1. Running n_warmup iterations to warm up GPU caches and JIT compilation\n2. Timing one real run to measure:\n   • TTFT: time to first token\n   • TPOT: (total_time - TTFT) / (tokens_generated - 1)\n\nReturns {ttft, tpot, tokens_generated}.',
+    insight:'GPU warmup is critical for accurate benchmarking. Without it, the first run includes CUDA kernel compilation (JIT) which can take seconds. Always benchmark hot.',
+    pseudocode:'for _ in range(n_warmup): engine_fn(request)\nt0 = time.perf_counter()\nresult = engine_fn(request)\nttft = result.get("time_to_first_token", ...)\ntpot = (time()-t0) / result["tokens_generated"]',
+    calls:[], calledBy:[55] },
+
+  { id:55, part:7, name:'run_concurrent_benchmark', brief:'Run requests concurrently at given concurrency level', status:'todo',
+    theory:'Benchmarks the server under concurrent load using asyncio:\n1. Create a semaphore limiting concurrent requests\n2. Wrap each request in a bounded coroutine\n3. Run all requests with asyncio.gather (true concurrency)\n4. Measure total wall-clock time\n5. Compute throughput: requests/sec and tokens/sec\n\nVarying concurrency levels reveals the system\'s saturation point.',
+    insight:'throughput typically increases with concurrency up to a saturation point, then flattens or decreases (due to queuing and context switching). The peak is the optimal batch size.',
+    pseudocode:'sem = asyncio.Semaphore(concurrency)\nasync def bounded(req):\n  async with sem:\n    return run_single_request_benchmark(engine_fn, req)\nt0 = time.perf_counter()\nresults = await asyncio.gather(*[bounded(r) for r in requests])',
+    calls:[54], calledBy:[57] },
+
+  { id:56, part:7, name:'plot_latency_vs_batch_size', brief:'Dual-subplot TTFT and TPOT vs batch size chart', status:'todo',
+    theory:'Plots TTFT and TPOT as a function of batch size using matplotlib. Two subplots side by side:\n• Left: TTFT (time to first token) vs batch size — typically increases linearly as prefill is parallelized\n• Right: TPOT (time per output token) vs batch size — shows how decode throughput scales\n\nInput: list of pre-computed result dicts with keys batch_size, ttft_mean, tpot_mean.',
+    insight:'TTFT usually increases with batch size (more work per prefill step). TPOT often stays flat or decreases with larger batches (better GPU utilization during decode). This is the continuous batching sweet spot.',
+    pseudocode:'fig, (ax1, ax2) = plt.subplots(1, 2)\nax1.plot(batch_sizes, ttft_values, marker="o")\nax2.plot(batch_sizes, tpot_values, marker="s")',
+    calls:[52], calledBy:[] },
+
+  { id:57, part:7, name:'plot_throughput_vs_concurrency', brief:'Throughput (tok/s) vs concurrency with peak annotation', status:'todo',
+    theory:'Plots throughput (tokens/sec) as a function of concurrency level and annotates the peak. The curve typically follows "Little\'s Law" shape:\n• Low concurrency: throughput increases linearly (underutilized)\n• Sweet spot: peak throughput where GPU is saturated\n• High concurrency: throughput flattens or decreases (queuing overhead)\n\nThe peak annotation helps identify the optimal concurrency setting.',
+    insight:'This chart is the primary tool for capacity planning. If peak throughput is at concurrency=16, then a server config with max_batch_size=16 maximizes utilization.',
+    pseudocode:'peak_idx = throughputs.index(max(throughputs))\nax.annotate(f"Peak: {throughputs[peak_idx]:.0f} tok/s",\n  xy=(concurrencies[peak_idx], throughputs[peak_idx]))',
+    calls:[55], calledBy:[] },
+
+  { id:58, part:7, name:'write_benchmark_report', brief:'Format benchmark results as ASCII table report', status:'todo',
+    theory:'Formats a dict of benchmark results as a human-readable ASCII table:\n• Header row with "Metric" and "Value" columns\n• Separator line\n• One row per metric, right-aligned values with 4 decimal places\n\nOptionally writes to a file. Returns the report string for display or testing.',
+    insight:'ASCII table reports are easy to include in CI artifacts, emails, or commit messages. They\'re the simplest way to make benchmark results durable and shareable.',
+    pseudocode:'header = f"{"Metric":<25} {"Value":>15}"\nrows = [header, "-"*42]\nfor key, val in results.items():\n  rows.append(f"{key:<25} {val:>15.4f}")\nreturn "\\n".join(rows)',
+    calls:[52], calledBy:[] },
+];
+
+let activeStepId = null;
+
+function getPartColor(partId) {
+  const colors = { 1:'#3b82f6', 2:'#8b5cf6', 3:'#14b8a6', 4:'#f97316', 5:'#ec4899', 6:'#22c55e', 7:'#eab308' };
+  return colors[partId];
+}
+
+function renderSidebar() {
+  const sidebar = document.getElementById('sidebar');
+  const h1 = sidebar.querySelector('h1');
+  PARTS.forEach(p => {
+    const el = document.createElement('div');
+    el.className = 'part-tab';
+    el.id = `tab-${p.id}`;
+    el.style.borderLeftColor = 'transparent';
+    el.innerHTML = `
+      <div class="part-dot" style="background:${p.color}"></div>
+      <span>Part ${p.id} — ${p.name}</span>
+      <span class="step-range">${p.steps}</span>
+    `;
+    el.onclick = () => {
+      document.getElementById(`part-${p.id}`).scrollIntoView({ behavior: 'smooth' });
+      document.querySelectorAll('.part-tab').forEach(t => { t.classList.remove('active'); t.style.borderLeftColor='transparent'; });
+      el.classList.add('active');
+      el.style.borderLeftColor = p.color;
+    };
+    sidebar.appendChild(el);
+  });
+}
+
+function renderGrid() {
+  const grid = document.getElementById('grid-area');
+  PARTS.forEach(part => {
+    const section = document.createElement('div');
+    section.className = 'part-section';
+    section.id = `part-${part.id}`;
+
+    const header = document.createElement('div');
+    header.className = 'part-header';
+    header.innerHTML = `
+      <span class="part-badge" style="background:${part.color}20;color:${part.color}">Part ${part.id}</span>
+      <span class="part-title">${part.name}</span>
+      <span class="part-desc">${part.desc}</span>
+    `;
+    section.appendChild(header);
+
+    const stepsGrid = document.createElement('div');
+    stepsGrid.className = 'steps-grid';
+
+    STEPS.filter(s => s.part === part.id).forEach(step => {
+      const card = document.createElement('div');
+      card.className = 'step-card';
+      card.id = `card-${step.id}`;
+      card.style.borderTopColor = part.color;
+      card.style.setProperty('--accent', part.color);
+      card.innerHTML = `
+        <div class="step-num">STEP ${step.id}</div>
+        <div class="step-name">${step.name}</div>
+        <div class="step-brief">${step.brief}</div>
+      `;
+      card.onclick = () => openDetail(step.id);
+      stepsGrid.appendChild(card);
+    });
+
+    section.appendChild(stepsGrid);
+    grid.appendChild(section);
+  });
+}
+
+function openDetail(stepId) {
+  const step = STEPS.find(s => s.id === stepId);
+  if (!step) return;
+  activeStepId = stepId;
+
+  document.querySelectorAll('.step-card').forEach(c => c.classList.remove('active'));
+  document.getElementById(`card-${stepId}`).classList.add('active');
+
+  const part = PARTS.find(p => p.id === step.part);
+  const color = getPartColor(step.part);
+
+  const callers = STEPS.filter(s => s.calls && s.calls.includes(stepId));
+  const callees = (step.calls || []).map(id => STEPS.find(s => s.id === id)).filter(Boolean);
+
+  const calleeChips = callees.length
+    ? callees.map(s => `<span class="dep-chip" onclick="openDetail(${s.id})" title="Jump to Step ${s.id}">Step ${s.id}: ${s.name}</span>`).join('')
+    : '<span style="color:var(--muted);font-size:12px">None</span>';
+
+  const callerChips = callers.length
+    ? callers.map(s => `<span class="dep-chip" onclick="openDetail(${s.id})" title="Jump to Step ${s.id}">Step ${s.id}: ${s.name}</span>`).join('')
+    : '<span style="color:var(--muted);font-size:12px">None</span>';
+
+  document.getElementById('detail-content').innerHTML = `
+    <div class="detail-step-num">STEP ${step.id} &nbsp;·&nbsp; PART ${step.part}</div>
+    <div class="detail-name">${step.name}()</div>
+    <span class="detail-part-badge" style="background:${color}20;color:${color}">Part ${step.part} — ${part.name}</span>
+
+    <div class="detail-section">
+      <h4>What it does</h4>
+      <p>${step.brief}</p>
+    </div>
+
+    <div class="detail-section">
+      <h4>Theory</h4>
+      <p style="white-space:pre-line">${step.theory}</p>
+    </div>
+
+    ${step.insight ? `
+    <div class="detail-section">
+      <h4>Key Insight</h4>
+      <p style="color:#fde68a;background:rgba(251,191,36,0.08);padding:10px 12px;border-radius:6px;border-left:3px solid #fbbf24">${step.insight}</p>
+    </div>` : ''}
+
+    <div class="detail-section">
+      <h4>Pseudocode</h4>
+      <div class="code-block">${step.pseudocode}</div>
+    </div>
+
+    <div class="divider"></div>
+
+    <div class="detail-section">
+      <h4>Calls (depends on)</h4>
+      <div>${calleeChips}</div>
+    </div>
+
+    <div class="detail-section">
+      <h4>Called by</h4>
+      <div>${callerChips}</div>
+    </div>
+  `;
+
+  document.getElementById('detail').classList.remove('hidden');
+}
+
+function closeDetail() {
+  document.getElementById('detail').classList.add('hidden');
+  document.querySelectorAll('.step-card').forEach(c => c.classList.remove('active'));
+  activeStepId = null;
+}
+
+// Intersection observer to highlight sidebar tab
+const observer = new IntersectionObserver((entries) => {
+  entries.forEach(entry => {
+    if (entry.isIntersecting) {
+      const partId = entry.target.id.replace('part-', '');
+      document.querySelectorAll('.part-tab').forEach(t => { t.classList.remove('active'); t.style.borderLeftColor='transparent'; });
+      const tab = document.getElementById(`tab-${partId}`);
+      if (tab) {
+        tab.classList.add('active');
+        const part = PARTS.find(p => p.id == partId);
+        if (part) tab.style.borderLeftColor = part.color;
+      }
+    }
+  });
+}, { threshold: 0.3 });
+
+// ─── TRACE DATA ──────────────────────────────────────────────────────────────
+const TRACE = [
+  {
+    title: 'Raw Input Received',
+    block: null, stepId: null, partColor: '#7c8db5', partLabel: 'Start',
+    input: '"the cat sat"',
+    output: '"the cat sat"\n(raw string, nothing done yet)',
+    explain: 'We have a plain text prompt. The model cannot work with strings directly — it needs integers. The pipeline starts with tokenization.',
+  },
+  {
+    title: 'build_token_vocab — build vocab',
+    block: 'diag-p1', stepId: 1, partColor: '#3b82f6', partLabel: 'Part 1 · Tiny Transformer',
+    input: 'Training corpus:\n"the cat sat on the mat"',
+    output: 'token_to_id:\n  "the" → 0\n  "cat" → 1\n  "sat" → 2\n  "on"  → 3\n  "mat" → 4\n\nid_to_token:\n  0 → "the"  1 → "cat"  ...',
+    explain: 'Split corpus on whitespace, deduplicate, assign IDs starting at 0. This is our entire vocabulary. Real models use BPE (GPT-2) for subword tokens — but the idea is the same.',
+  },
+  {
+    title: 'encode — text → token IDs',
+    block: 'diag-p1', stepId: 2, partColor: '#3b82f6', partLabel: 'Part 1 · Tiny Transformer',
+    input: 'text = "the cat sat"\ntoken_to_id = {"the":0, "cat":1, "sat":2, ...}',
+    output: '[0, 1, 2]\n\n"the" → 0\n"cat" → 1\n"sat" → 2',
+    explain: 'Split input on whitespace, look up each token. The 3-word prompt is now a list of 3 integers. This list is what the model actually processes.',
+  },
+  {
+    title: 'build_causal_mask — prevent future peeking',
+    block: 'diag-p1', stepId: 4, partColor: '#3b82f6', partLabel: 'Part 1 · Tiny Transformer',
+    input: 'seq_len = 3',
+    output: 'mask (True = blocked):\n\n      the  cat  sat\nthe [ F    T    T  ]\ncat [ F    F    T  ]\nsat [ F    F    F  ]',
+    explain: '"the" (pos 0) can only see itself. "cat" (pos 1) sees "the" and itself. "sat" (pos 2) sees all three. This enforces causality — no token can cheat by looking at the future.',
+  },
+  {
+    title: 'scaled_dot_product_attention — how "sat" gathers context',
+    block: 'diag-p1', stepId: 5, partColor: '#3b82f6', partLabel: 'Part 1 · Tiny Transformer',
+    input: 'Q[2] = query for "sat"  [1×64]\nK[0:3] = keys for all 3 tokens  [3×64]\nV[0:3] = values for all 3 tokens  [3×64]\nmask[2] = [False, False, False]  ← can see all',
+    output: 'raw scores = Q[2] @ Kᵀ / √64\n  → [score_the, score_cat, score_sat]\n  → [1.2, 0.8, 1.5]  (example)\n\nafter softmax:\n  → [0.28, 0.19, 0.53]\n\noutput = 0.28·V[the] + 0.19·V[cat] + 0.53·V[sat]',
+    explain: '"sat" attends most to itself (0.53), then "the" (0.28), then "cat" (0.19). This weighted mix is what the model uses to predict the next token. Different heads learn different attention patterns.',
+  },
+  {
+    title: 'gpt_model_forward — full forward pass',
+    block: 'diag-p1', stepId: 9, partColor: '#3b82f6', partLabel: 'Part 1 · Tiny Transformer',
+    input: 'token_ids = [0, 1, 2]  ← "the cat sat"',
+    output: '1. x = wte[[0,1,2]] + wpe[0:3]   ← embed + position\n2. mask = build_causal_mask(3)\n3. x = transformer_block(x) × N   ← stack of blocks\n4. x = LayerNorm(x)\n5. logits = x @ wte.T             ← [3 × vocab_size]\n\nlogits[-1] = scores over vocab for NEXT token:\n  "the"=1.1  "cat"=0.4  "sat"=0.7  "on"=2.3  "mat"=1.8\n  → highest: "on" (id=3)',
+    explain: 'The full GPT pipeline in one call. The last row of logits (position 2 = "sat") represents the model\'s belief about what comes next. "on" has the highest score — it\'s the most likely continuation.',
+  },
+  {
+    title: 'temperature_scaling + top_k_filter + sample_next_token',
+    block: 'diag-p2', stepId: 14, partColor: '#8b5cf6', partLabel: 'Part 2 · Sampling',
+    input: 'logits[-1] = [1.1, 0.4, 0.7, 2.3, 1.8]  ← 5 vocab tokens\ntemperature = 0.8,  top_k = 3',
+    output: 'after temp (÷0.8): [1.38, 0.50, 0.88, 2.88, 2.25]\nafter top_k=3: keep only top-3 → "the"=-inf, "cat"=-inf\n  kept: "on"=2.88,  "mat"=2.25,  "the"=1.38\nafter softmax:\n  "on"=0.48  "mat"=0.33  "the"=0.19\nmultinomial sample → token_id = 3  ("on") ✓',
+    explain: 'Temperature 0.8 sharpens the distribution (model is more decisive). Top-k=3 restricts to the 3 best tokens. Multinomial sampling draws probabilistically — "on" wins with 48% chance.',
+  },
+  {
+    title: 'autoregressive_generate — the generation loop',
+    block: 'diag-p2', stepId: 15, partColor: '#8b5cf6', partLabel: 'Part 2 · Sampling',
+    input: 'input_ids = [0, 1, 2]   ("the cat sat")\nmax_new_tokens = 3',
+    output: 'Iteration 1:\n  forward([0,1,2]) → logits → sample → 3 ("on")\n  ids = [0, 1, 2, 3]\n\nIteration 2:\n  forward([0,1,2,3]) → logits → sample → 4 ("mat")\n  ids = [0, 1, 2, 3, 4]\n\nIteration 3:\n  forward([0,1,2,3,4]) → logits → sample → 0 ("the")\n  ids = [0, 1, 2, 3, 4, 0]\n\n⚠ Each step recomputes ALL previous K/V (no cache yet)',
+    explain: 'The sequence grows by 1 token per step. Step i processes i tokens: O(n²) total work. At 100 tokens, step 100 processes 100 tokens — just to get 1 new one. This is the bottleneck KV cache solves.',
+  },
+  {
+    title: 'decode — token IDs → output string',
+    block: 'diag-p1', stepId: 3, partColor: '#3b82f6', partLabel: 'Part 1 · Tiny Transformer',
+    input: '[0, 1, 2, 3, 4, 0]\n\nid_to_token = {0:"the", 1:"cat", 2:"sat", 3:"on", 4:"mat"}',
+    output: '"the cat sat on mat the"\n\n(rstrip() removes trailing space from join loop)',
+    explain: 'Map each integer back to its string token, join with spaces. The model generated "on mat the" as continuation to "the cat sat". The full pipeline: text → encode → forward → sample → decode → text.',
+  },
+  {
+    title: 'KV Cache: prefill_phase — process prompt once',
+    block: 'diag-p3', stepId: 21, partColor: '#14b8a6', partLabel: 'Part 3 · KV Cache',
+    input: 'Full prompt: [0, 1, 2]  ("the cat sat")\nPre-allocated cache: zeros shape [n_layers, B, H, max_len, d_k]',
+    output: 'Run full forward pass on [0,1,2]:\n  cache[layer][k][:,:,0,:] = K("the")\n  cache[layer][k][:,:,1,:] = K("cat")\n  cache[layer][k][:,:,2,:] = K("sat")\n  (same for values)\n\nreturn logits[:,-1,:], prompt_len=3\n  → ready to decode from position 3',
+    explain: 'Prefill is expensive (processes N tokens at once) but done only once. All K/V pairs for the prompt are stored. Every decode step that follows will reuse these without recomputing them.',
+  },
+  {
+    title: 'KV Cache: decode_phase — single token, reuse cache',
+    block: 'diag-p3', stepId: 22, partColor: '#14b8a6', partLabel: 'Part 3 · KV Cache',
+    input: 'last_token = 3  ("on"),  step = 3\nCached K/V for positions 0, 1, 2 already in cache',
+    output: 'Process ONLY token "on" (1 token, not 4):\n  Q = embed("on") @ W_q\n  read K,V from cache for positions 0-2\n  attention: Q attends to cached K/V\n  write new K("on"), V("on") to cache[step=3]\n\nsample next → 4 ("mat")\n\n  Before cache: step 4 processes [0,1,2,3] = 4 tokens\n  After cache:  step 4 processes only [3] = 1 token ✓',
+    explain: 'Instead of re-computing K/V for "the cat sat" on every step, we read from cache. At step 100, without cache we\'d process 100 tokens; with cache we process 1. This is the speedup.',
+  },
+  {
+    title: 'Paged Attention: write_kv_to_page — non-contiguous storage',
+    block: 'diag-p4', stepId: 30, partColor: '#f97316', partLabel: 'Part 4 · Paged Attention',
+    input: 'seq_id=0, token_pos=3, layer=0\npage_size=16\nk: [n_heads × d_k]  ← K vector for "on"',
+    output: 'page_number = 3 // 16 = 0   ← which page?\nslot       = 3 % 16  = 3   ← which slot in that page?\npage_idx   = block_table[0][0]  ← say physical page #7\n\npool.k_pages[layer=0, page=7, :, slot=3, :] = k\npool.v_pages[layer=0, page=7, :, slot=3, :] = v\n\n✓ No copying, no reallocation — just an in-place write',
+    explain: 'The block table maps (seq_id, logical_page) → physical page. Sequence 0\'s first 16 tokens live in physical page #7. When seq 0 finishes, page 7 is freed and reused for any new sequence.',
+  },
+  {
+    title: 'Continuous Batching: one scheduler iteration',
+    block: 'diag-p5', stepId: 38, partColor: '#ec4899', partLabel: 'Part 5 · Continuous Batching',
+    input: 'Queue: ["the cat sat", "dogs are loyal", "hello world"]\nmax_batch_size = 2',
+    output: '── Tick 1 ──\n  add seq_0 = "the cat sat"    (3 tokens)\n  add seq_1 = "dogs are loyal"  (3 tokens)\n  batch full (size=2)\n  decode: seq_0→"on",  seq_1→"animals"\n\n── Tick 2 ──\n  seq_1 hits EOS → finished, pages freed\n  add seq_2 = "hello world"     ← fills freed slot immediately!\n  decode: seq_0→"mat",  seq_2→"friend"\n\n(no GPU slot ever idles waiting for a long sequence)',
+    explain: 'Static batching would wait until BOTH seq_0 and seq_1 finish before adding seq_2. Continuous batching fills the freed slot on the very next iteration — maximising GPU utilization.',
+  },
+  {
+    title: 'Streaming API: SSE token stream',
+    block: 'diag-p6', stepId: 47, partColor: '#22c55e', partLabel: 'Part 6 · Streaming API',
+    input: 'POST /generate/stream HTTP/1.1\nContent-Type: application/json\n\n{"prompt":"the cat sat","max_tokens":3,"temperature":0.8}',
+    output: 'HTTP/1.1 200 OK\nContent-Type: text/event-stream\n\ndata: on\n\ndata: the\n\ndata: mat\n\ndata: [DONE]\n\n(each token arrives the moment it\'s sampled)',
+    explain: 'Server-Sent Events stream one token per "data:" line. The client\'s UI can append each token as it arrives — this is why ChatGPT text appears word-by-word. Without streaming, users wait the full generation time.',
+  },
+  {
+    title: 'Benchmarks: compute_metrics — tail latency matters',
+    block: 'diag-p7', stepId: 52, partColor: '#eab308', partLabel: 'Part 7 · Benchmarks',
+    input: '5 requests completed:\nttft_list = [0.12, 0.15, 0.11, 0.28, 0.13]  ← time-to-first-token (s)\ntpot_list = [0.04, 0.05, 0.04, 0.06, 0.04]  ← time-per-output-token (s)\ntotal_tokens=180,  total_time=8.2s',
+    output: 'TTFT:  mean=0.158  p50=0.130  p95=0.268  p99=0.276\nTPOT:  mean=0.046  p50=0.040  p95=0.059  p99=0.060\nthroughput = 180 / 8.2 = 21.9 tok/sec\n\n→ SLO check: p99 TTFT = 276ms\n  1% of users wait >276ms for first token',
+    explain: 'p99 tail latency is what SLOs (Service Level Objectives) are written against — not mean. If mean TTFT=158ms looks fine but p99=276ms, production users occasionally experience 2× the expected wait.',
+  },
+];
+
+let traceIdx = -1;
+let traceVisited = new Set();
+
+function startTrace() {
+  document.getElementById('btn-start').style.display = 'none';
+  document.getElementById('btn-reset').style.display = '';
+  document.getElementById('btn-next').disabled = false;
+  // build progress dots
+  const prog = document.getElementById('trace-progress');
+  prog.innerHTML = TRACE.map((_, i) => `<div class="trace-dot" id="tdot-${i}" onclick="jumpTrace(${i})" title="${TRACE[i].title}"></div>`).join('');
+  renderTraceStep(0);
+}
+
+function traceStep(dir) {
+  const next = traceIdx + dir;
+  if (next < 0 || next >= TRACE.length) return;
+  renderTraceStep(next);
+}
+
+function jumpTrace(idx) { renderTraceStep(idx); }
+
+function renderTraceStep(idx) {
+  traceIdx = idx;
+  traceVisited.add(idx);
+  const t = TRACE[idx];
+  const partColors = { 'diag-p1':'#3b82f6','diag-p2':'#8b5cf6','diag-p3':'#14b8a6','diag-p4':'#f97316','diag-p5':'#ec4899','diag-p6':'#22c55e','diag-p7':'#eab308' };
+
+  // highlight block
+  document.querySelectorAll('.diag-part').forEach(g => g.classList.remove('diag-active'));
+  if (t.block) {
+    const el = document.getElementById(t.block);
+    if (el) el.classList.add('diag-active');
+  }
+
+  // update dots
+  TRACE.forEach((_, i) => {
+    const dot = document.getElementById(`tdot-${i}`);
+    if (!dot) return;
+    dot.classList.toggle('active', i === idx);
+    dot.classList.toggle('visited', traceVisited.has(i) && i !== idx);
+  });
+
+  // update card
+  const card = document.getElementById('trace-card');
+  card.classList.remove('hidden');
+
+  const color = t.partColor;
+  document.getElementById('trace-badge').textContent = t.stepId ? `STEP ${t.stepId}` : 'START';
+  document.getElementById('trace-badge').style.cssText = `background:${color}22;color:${color};font-size:10px;font-weight:800;letter-spacing:0.08em;padding:3px 8px;border-radius:6px;`;
+  document.getElementById('trace-step-title').textContent = t.title;
+  document.getElementById('trace-part-label').textContent = t.partLabel;
+  document.getElementById('trace-input').textContent = t.input;
+  document.getElementById('trace-output').textContent = t.output;
+  document.getElementById('trace-explain').innerHTML = t.explain.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+
+  // update counter
+  document.getElementById('trace-counter').textContent = `Step ${idx + 1} / ${TRACE.length}`;
+  document.getElementById('btn-prev').disabled = idx === 0;
+  document.getElementById('btn-next').disabled = idx === TRACE.length - 1;
+
+  // scroll trace card into view
+  card.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+
+  // also open step detail panel if in diagram mode
+  if (t.stepId) { openDetail(t.stepId); }
+}
+
+function resetTrace() {
+  traceIdx = -1;
+  traceVisited.clear();
+  document.getElementById('trace-card').classList.add('hidden');
+  document.getElementById('trace-progress').innerHTML = '';
+  document.getElementById('btn-start').style.display = '';
+  document.getElementById('btn-reset').style.display = 'none';
+  document.getElementById('btn-prev').disabled = true;
+  document.getElementById('btn-next').disabled = true;
+  document.getElementById('trace-counter').textContent = 'Not started';
+  document.querySelectorAll('.diag-part').forEach(g => g.classList.remove('diag-active'));
+  closeDetail();
+}
+// ─────────────────────────────────────────────────────────────────────────────
+
+function switchView(view) {
+  const grid = document.getElementById('grid-area');
+  const diagram = document.getElementById('diagram-area');
+  const btnGrid = document.getElementById('btn-grid');
+  const btnDiagram = document.getElementById('btn-diagram');
+  if (view === 'grid') {
+    grid.classList.remove('hidden-view');
+    diagram.classList.remove('visible');
+    btnGrid.classList.add('active');
+    btnDiagram.classList.remove('active');
+  } else {
+    grid.classList.add('hidden-view');
+    diagram.classList.add('visible');
+    btnGrid.classList.remove('active');
+    btnDiagram.classList.add('active');
+  }
+}
+
+function diagramPartClick(firstStepId) {
+  openDetail(firstStepId);
+  // if detail panel just opened, make sure we can see it
+  const detail = document.getElementById('detail');
+  detail.scrollTop = 0;
+}
+
+renderSidebar();
+renderGrid();
+
+PARTS.forEach(p => {
+  const el = document.getElementById(`part-${p.id}`);
+  if (el) observer.observe(el);
+});
+</script>
+</body>
+</html>
