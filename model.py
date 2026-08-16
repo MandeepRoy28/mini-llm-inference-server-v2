@@ -167,7 +167,10 @@ def feed_forward_block(
 ) -> torch.Tensor:
     """Two-layer feed-forward: Linear → GELU → Linear."""
     # TODO: x = F.gelu(x @ W1 + b1); return x @ W2 + b2
-    raise NotImplementedError
+    x = x@W1 + b1 
+    x = F.gelu(x)
+    x = x@W2 + b2
+    return x
 
 
 # Step 8 - transformer_block
@@ -182,13 +185,21 @@ def transformer_block(
 ) -> torch.Tensor:
     """Pre-LayerNorm transformer block: LN → MHA + residual, LN → FFN + residual.
 
+    attn_params keys: 'ln1_w', 'ln1_b', 'W_q', 'W_k', 'W_v', 'W_o'
+    ffn_params keys:  'ln2_w', 'ln2_b', 'W1', 'b1', 'W2', 'b2'
+
     Calls: multi_head_attention_forward (step 6), feed_forward_block (step 7)
     """
     # TODO:
-    #   ln1 = layer_norm(x, attn_params['ln1_w'], attn_params['ln1_b'])
-    #   x = x + multi_head_attention_forward(ln1, ..., n_heads, mask)
-    #   ln2 = layer_norm(x, ffn_params['ln2_w'], ffn_params['ln2_b'])
-    #   x = x + feed_forward_block(ln2, ...)
+    #   ln1 = torch.layer_norm(x, [x.size(-1)], attn_params['ln1_w'], attn_params['ln1_b'])
+    #   x = x + multi_head_attention_forward(ln1,
+    #               attn_params['W_q'], attn_params['W_k'],
+    #               attn_params['W_v'], attn_params['W_o'],
+    #               n_heads, mask)
+    #   ln2 = torch.layer_norm(x, [x.size(-1)], ffn_params['ln2_w'], ffn_params['ln2_b'])
+    #   x = x + feed_forward_block(ln2,
+    #               ffn_params['W1'], ffn_params['b1'],
+    #               ffn_params['W2'], ffn_params['b2'])
     #   return x
     ln1 = torch.layer_norm(x, attn_params['ln1_w'], attn_params['ln1_b'])
     x = x + multi_head_attention_forward(x, )
@@ -203,15 +214,26 @@ def gpt_model_forward(
 ) -> torch.Tensor:
     """Embed tokens + positions → N transformer blocks → LN → unembed to logits.
 
+    params keys:
+        'wte'     : (vocab_size, d_model)  token embedding table
+        'wpe'     : (max_seq_len, d_model) position embedding table
+        'n_heads' : int
+        'blocks'  : list of dicts, one per layer, each with:
+                      'attn' → attn_params (see step 8)
+                      'ffn'  → ffn_params  (see step 8)
+        'ln_f_w'  : (d_model,)  final LayerNorm weight
+        'ln_f_b'  : (d_model,)  final LayerNorm bias
+
     Calls: build_causal_mask (step 4), transformer_block (step 8)
     """
     # TODO:
+    #   seq_len = token_ids.size(-1)
     #   x = params['wte'][token_ids] + params['wpe'][:seq_len]
     #   mask = build_causal_mask(seq_len)
     #   for block_params in params['blocks']:
     #       x = transformer_block(x, block_params['attn'], block_params['ffn'],
     #                             params['n_heads'], mask)
-    #   x = layer_norm(x, params['ln_f_w'], params['ln_f_b'])
+    #   x = torch.layer_norm(x, [x.size(-1)], params['ln_f_w'], params['ln_f_b'])
     #   return x @ params['wte'].T   # weight-tied unembed
     
 
