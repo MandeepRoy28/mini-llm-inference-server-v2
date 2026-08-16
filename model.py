@@ -91,6 +91,7 @@ def build_causal_mask(seq_len: int) -> torch.Tensor:
 # Step 5 - scaled_dot_product_attention
 import torch
 import torch.nn.functional as F
+import math
 
 def scaled_dot_product_attention(
     Q: torch.Tensor,
@@ -105,7 +106,13 @@ def scaled_dot_product_attention(
     # TODO: d_k = Q.size(-1); scores = Q @ K.transpose(-2, -1) / sqrt(d_k);
     #       if mask: scores = scores.masked_fill(mask, -1e9);
     #       return softmax(scores, dim=-1) @ V
-    raise NotImplementedError
+    d_k = Q.size(-1)
+    scores = Q @ K.transpose(-2, -1) / math.sqrt(d_k)
+
+    if mask is not None :
+        scores = scores.masked_fill(mask, -1e9)
+    
+    return torch.softmax(scores, dim=-1)@V 
 
 
 # Step 6 - multi_head_attention_forward
