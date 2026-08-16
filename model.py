@@ -215,16 +215,6 @@ def gpt_model_forward(
 ) -> torch.Tensor:
     """Embed tokens + positions → N transformer blocks → LN → unembed to logits.
 
-    params keys:
-        'wte'     : (vocab_size, d_model)  token embedding table
-        'wpe'     : (max_seq_len, d_model) position embedding table
-        'n_heads' : int
-        'blocks'  : list of dicts, one per layer, each with:
-                      'attn' → attn_params (see step 8)
-                      'ffn'  → ffn_params  (see step 8)
-        'ln_f_w'  : (d_model,)  final LayerNorm weight
-        'ln_f_b'  : (d_model,)  final LayerNorm bias
-
     Calls: build_causal_mask (step 4), transformer_block (step 8)
     """
     # TODO:
@@ -236,8 +226,33 @@ def gpt_model_forward(
     #                             params['n_heads'], mask)
     #   x = torch.layer_norm(x, [x.size(-1)], params['ln_f_w'], params['ln_f_b'])
     #   return x @ params['wte'].T   # weight-tied unembed
-    
+    seq_len = token_ids.size(-1)
+    x = params['wte'][token_ids] + params['wpe'][:seq_len] # Here doing embeeding + PE
+    mask = build_causal_mask(seq_len)
 
+    for block_param in params['blocks'] :
+        attn_params = {
+            'W_q' : block_param['W_q'],
+            'W_k' : block_param['W_k'],
+            'W_v' : block_param['W_v'],
+            'W_o' : block_param['W_o'],
+            'gamma_1' : block_param['gamma_1'],
+            'beta_1' : block_param['beta_1']
+        }
+
+        ffn_params = {
+            'W1' : block_param['W1'],
+            'b1' : block_param['b1'],
+            'W2' : block_param['W2'],
+            'b2' : block_param['b2'],
+            'gamma_2' : block_param['gamma_2'],
+            'beta_2' : block_param['beta_2']
+        }
+        x = transformer_block(x, attn_params, ffn_params, block_param['n_heads'], mask)
+
+    x = torch.layer_norm(x, [x.size(-1)], params['ln_f_gamma'], params['ln_f_beta'])
+
+    return x@params['wte'].transpose(-2, -1)
 
 # ---------------------------------------------------------------------------
 # Part 2 — Sampling
