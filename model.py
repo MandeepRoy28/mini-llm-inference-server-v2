@@ -78,7 +78,14 @@ def build_causal_mask(seq_len: int) -> torch.Tensor:
     True means the position is masked (future tokens are invisible).
     """
     # TODO: torch.ones(seq_len, seq_len).triu(diagonal=1).bool()
-    raise NotImplementedError
+    casual_mask = torch.zeros((seq_len, seq_len), dtype=torch.bool)
+    for i in range(0, seq_len):
+        for j in range(0, seq_len):
+            if j<=i :
+                casual_mask[i][j] = False
+            else :
+                casual_mask[i][j] = True
+    return casual_mask
 
 
 # Step 5 - scaled_dot_product_attention
