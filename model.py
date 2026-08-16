@@ -134,7 +134,24 @@ def multi_head_attention_forward(
     # TODO: project x → Q, K, V; reshape to (B, n_heads, T, d_k);
     #       call scaled_dot_product_attention per head (or batched);
     #       concatenate heads; project through W_o
-    raise NotImplementedError
+    Q = x@W_q
+    K = x@W_k
+    V = x@W_k 
+
+    seq_len = Q.size(-2)
+    d_model = Q.size(-1)
+    d_k = d_model//n_heads
+
+    Q = Q.reshape(-1, seq_len, n_heads, d_k).transpose(1,2)
+    K = K.reshape(-1, seq_len, n_heads, d_k).transpose(1,2)
+    V = V.reshape(-1, seq_len, n_heads, d_k).transpose(1,2)
+
+    O = scaled_dot_product_attention(Q, K, V, mask)
+    O = O.transpose(1,2)
+    O = O.reshape(-1, seq_len, d_model)
+    return O@W_o
+
+
 
 
 # Step 7 - feed_forward_block
