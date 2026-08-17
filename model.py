@@ -297,7 +297,17 @@ def top_p_nucleus_filter(logits: torch.Tensor, p: float) -> torch.Tensor:
     """Zero out logits outside the smallest set whose cumulative prob >= p."""
     # TODO: sort descending; compute cumulative softmax probs;
     #       mask tokens where cumsum - current_prob > p → -inf
-    raise NotImplementedError
+    sorted_logits, sorted_indices = torch.sort(logits, descending=True)
+    probs = torch.softmax(sorted_logits, dim=-1)
+    cumsum = torch.cumsum(probs, dim=-1)
+
+    remove_mask = cumsum - probs > p
+    sorted_logits = sorted_logits.masked_fill(remove_mask, float('-inf'))
+
+    # unsort back to original token position 
+    result = torch.zeros_like(logits)
+    result.scatter_(dim=-1, index=sorted_indices, src=sorted_logits)
+    return result
 
 
 # Step 14 - sample_next_token
