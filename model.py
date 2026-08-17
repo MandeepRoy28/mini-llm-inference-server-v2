@@ -330,7 +330,15 @@ def sample_next_token(
     #   if top_p < 1.0: logits = top_p_nucleus_filter(logits, top_p)
     #   probs = softmax(logits, dim=-1)
     #   return int(torch.multinomial(probs, 1))
-    raise NotImplementedError
+    logits = temperature_scaling(logits, temperature)
+    if top_k > 0 :
+        logits = top_k_filter(logits, top_k)
+    if top_p < 1.0 :
+        logits = top_p_nucleus_filter(logits, top_p)
+
+    probs = torch.softmax(logits, dim=-1)
+    return int(torch.multinomial(probs, 1))
+
 
 
 # Step 15 - autoregressive_generate
