@@ -188,16 +188,13 @@ def transformer_block(
     Calls: multi_head_attention_forward (step 6), feed_forward_block (step 7)
     """
     # TODO:
-    #   ln1 = torch.layer_norm(x, [x.size(-1)], attn_params['gamma_1'], attn_params['beta_1'])
-    #   x = x + multi_head_attention_forward(ln1,
-    #               attn_params['W_q'], attn_params['W_k'],
-    #               attn_params['W_v'], attn_params['W_o'],
-    #               n_heads, mask)
-    #   ln2 = torch.layer_norm(x, [x.size(-1)], ffn_params['gamma_2'], ffn_params['beta_2'])
-    #   x = x + feed_forward_block(ln2,
-    #               ffn_params['W1'], ffn_params['b1'],
-    #               ffn_params['W2'], ffn_params['b2'])
-    #   return x
+    #   1. LayerNorm x using attn_params gamma/beta → ln1
+    #   2. Run multi_head_attention_forward on ln1 using W_q, W_k, W_v, W_o from attn_params
+    #   3. Add result to x (residual connection)
+    #   4. LayerNorm x using ffn_params gamma/beta → ln2
+    #   5. Run feed_forward_block on ln2 using W1, b1, W2, b2 from ffn_params
+    #   6. Add result to x (residual connection)
+    #   7. Return x
     ln1 = torch.layer_norm(x, [x.size(-1)], attn_params['gamma_1'], attn_params['beta_1'])
     x = x + multi_head_attention_forward(
         ln1, attn_params['W_q'], attn_params['W_k'], attn_params['W_v'], attn_params['W_o'], n_heads, mask)
@@ -218,14 +215,13 @@ def gpt_model_forward(
     Calls: build_causal_mask (step 4), transformer_block (step 8)
     """
     # TODO:
-    #   seq_len = token_ids.size(-1)
-    #   x = params['wte'][token_ids] + params['wpe'][:seq_len]
-    #   mask = build_causal_mask(seq_len)
-    #   for block_params in params['blocks']:
-    #       x = transformer_block(x, block_params['attn'], block_params['ffn'],
-    #                             params['n_heads'], mask)
-    #   x = torch.layer_norm(x, [x.size(-1)], params['ln_f_w'], params['ln_f_b'])
-    #   return x @ params['wte'].T   # weight-tied unembed
+    #   1. Get seq_len from token_ids shape
+    #   2. Look up token embeddings (wte) + position embeddings (wpe) → x
+    #   3. Build causal mask for seq_len (step 4)
+    #   4. Loop over each block in params['blocks']:
+    #        pass x through transformer_block with that block's attn/ffn params
+    #   5. Apply final LayerNorm to x using ln_f_w, ln_f_b
+    #   6. Unembed: x @ wte.T to get logits of shape (batch, seq_len, vocab_size)
     seq_len = token_ids.size(-1)
     x = params['wte'][token_ids] + params['wpe'][:seq_len] # Here doing embeeding + PE
     mask = build_causal_mask(seq_len)
@@ -357,13 +353,16 @@ def autoregressive_generate(
 
     Calls: sample_next_token (step 14)
     """
-    # TODO: for _ in range(max_new_tokens):
-    #           logits = model_forward(input_ids)  → last-position logits
-    #           next_id = sample_next_token(logits[-1], temperature, top_k, top_p)
-    #           input_ids = torch.cat([input_ids, tensor([next_id])])
-    #           if next_id == eos_token_id: break
-    #       return input_ids
-    raise NotImplementedError
+    # TODO:
+    #   1. Loop up to max_new_tokens times
+    #   2. Each iteration: run model_forward on the current input_ids to get logits,
+    #      then extract the logits at the last sequence position
+    #   3. Call sample_next_token on those last-position logits using
+    #      temperature, top_k, and top_p to get the next token id
+    #   4. Append the new token id to input_ids (concatenate along the sequence dim)
+    #   5. If the new token equals eos_token_id, stop early
+    #   6. Return the full sequence of input_ids including generated tokens
+    
 
 
 # Step 16 - generate_with_prompt
@@ -382,11 +381,12 @@ def generate_with_prompt(
     Calls: encode (step 2), autoregressive_generate (step 15), decode (step 3)
     """
     # TODO:
-    #   ids = encode(prompt, token_to_id)
-    #   input_ids = torch.tensor(ids)
-    #   output_ids = autoregressive_generate(model_forward, input_ids,
-    #                                        max_new_tokens, temperature=temperature)
-    #   return decode(output_ids.tolist(), id_to_token)
+    #   1. Encode the prompt string into a list of token ids using encode
+    #   2. Convert that list into a tensor suitable for the model
+    #   3. Run autoregressive_generate with model_forward, the input tensor,
+    #      max_new_tokens, and the temperature setting
+    #   4. Convert the output tensor to a plain list of ids and decode back to a string
+    #   5. Return the decoded string
     raise NotImplementedError
 
 
@@ -410,8 +410,11 @@ def allocate_kv_cache_buffers(
     Returns a list of dicts, one per layer, each with keys 'k' and 'v'
     of shape (batch_size, n_heads, max_seq_len, d_k).
     """
-    # TODO: return [{'k': torch.zeros(...), 'v': torch.zeros(...)}
-    #               for _ in range(n_layers)]
+    # TODO:
+    #   1. Build a list of n_layers dicts, one per transformer layer
+    #   2. Each dict holds a zero-filled K tensor and a zero-filled V tensor,
+    #      both of shape (batch_size, n_heads, max_seq_len, d_k) with the given dtype
+    #   3. Return the list
     raise NotImplementedError
 
 
@@ -426,8 +429,11 @@ def write_kv_to_cache(
     v: torch.Tensor,
 ) -> None:
     """Write key/value tensors at position `step` in the cache (in-place)."""
-    # TODO: cache[layer_idx]['k'][:, :, step, :] = k
-    #       cache[layer_idx]['v'][:, :, step, :] = v
+    # TODO:
+    #   1. Index into the cache for the given layer
+    #   2. Write k into the K buffer at position step (all batches, all heads)
+    #   3. Write v into the V buffer at position step (all batches, all heads)
+    #   (Both writes are in-place; return nothing)
     raise NotImplementedError
 
 
@@ -440,9 +446,12 @@ def read_kv_from_cache(
     current_len: int,
 ) -> tuple[torch.Tensor, torch.Tensor]:
     """Read the first `current_len` entries from the cache for layer_idx."""
-    # TODO: k = cache[layer_idx]['k'][:, :, :current_len, :]
-    #       v = cache[layer_idx]['v'][:, :, :current_len, :]
-    #       return k, v
+    # TODO:
+    #   1. Look up the cache entry for the given layer
+    #   2. Slice the K buffer to keep only the first current_len positions
+    #      (all batches, all heads, positions 0..current_len-1, all d_k)
+    #   3. Do the same slice for the V buffer
+    #   4. Return the (k_slice, v_slice) pair
     raise NotImplementedError
 
 
@@ -460,8 +469,11 @@ def attention_with_kv_cache(
     Calls: read_kv_from_cache (step 19), scaled_dot_product_attention (step 5)
     """
     # TODO:
-    #   k, v = read_kv_from_cache(cache, layer_idx, current_len)
-    #   return scaled_dot_product_attention(q, k, v)  # no causal mask needed
+    #   1. Retrieve the K and V slices for the given layer up to current_len
+    #      by calling read_kv_from_cache
+    #   2. Run scaled_dot_product_attention with q against those cached keys and values
+    #      (no causal mask is needed during decoding — past tokens are already fixed)
+    #   3. Return the attention output
     raise NotImplementedError
 
 
@@ -478,9 +490,12 @@ def prefill_phase(
     Returns (logits_of_last_token, prompt_length).
     Calls: write_kv_to_cache (step 18) — model_forward_with_cache handles internally
     """
-    # TODO: logits = model_forward_with_cache(input_ids, cache, start_pos=0)
-    #       prompt_len = input_ids.shape[-1]
-    #       return logits[:, -1, :], prompt_len
+    # TODO:
+    #   1. Pass the full input_ids through model_forward_with_cache starting at
+    #      position 0 so that K/V for every prompt token get written into the cache
+    #   2. Record the prompt length from input_ids' sequence dimension
+    #   3. Return only the logits at the last prompt position together with the prompt length
+    #      (the caller uses these logits to sample the first new token)
     raise NotImplementedError
 
 
@@ -499,10 +514,12 @@ def decode_phase(
     Calls: sample_next_token (step 14), write_kv_to_cache via model_forward_with_cache (step 18)
     """
     # TODO:
-    #   token = torch.tensor([[last_token_id]])
-    #   logits = model_forward_with_cache(token, cache, start_pos=step)
-    #   next_id = sample_next_token(logits[0, -1], temperature)
-    #   return next_id, logits
+    #   1. Wrap last_token_id in a single-token tensor with the right shape
+    #   2. Run model_forward_with_cache on that one token, providing the cache
+    #      and the current step position so the cache slot is written correctly
+    #   3. Extract the logits for that single output position
+    #   4. Call sample_next_token with those logits and the temperature to get next_id
+    #   5. Return (next_id, logits)
     raise NotImplementedError
 
 
@@ -520,11 +537,12 @@ def benchmark_no_cache(
     Returns dict with keys: total_time, steps, tokens_per_sec.
     Calls: autoregressive_generate (step 15)
     """
-    # TODO: start = time.perf_counter()
-    #       autoregressive_generate(model_forward, input_ids, n_steps)
-    #       elapsed = time.perf_counter() - start
-    #       return {'total_time': elapsed, 'steps': n_steps,
-    #               'tokens_per_sec': n_steps / elapsed}
+    # TODO:
+    #   1. Record the wall-clock start time
+    #   2. Run autoregressive_generate for n_steps new tokens (no cache)
+    #   3. Record elapsed time after generation completes
+    #   4. Return a summary dict containing total_time, the number of steps,
+    #      and tokens_per_sec computed as n_steps divided by elapsed time
     raise NotImplementedError
 
 
@@ -545,11 +563,13 @@ def benchmark_kv_cache_speedup(
            decode_phase (step 22)
     """
     # TODO:
-    #   result_no_cache = benchmark_no_cache(model_forward, input_ids, n_new_tokens)
-    #   # benchmark with cache: prefill_phase + n_new_tokens × decode_phase
-    #   speedup_factor = result_no_cache['total_time'] / time_with_cache
-    #   return {'time_no_cache': ..., 'time_with_cache': ...,
-    #           'speedup_factor': speedup_factor}
+    #   1. Call benchmark_no_cache to measure how long plain generation takes
+    #      (no cache) for n_new_tokens steps; record that time
+    #   2. Time the cached path: run prefill_phase to populate the cache, then
+    #      loop n_new_tokens times calling decode_phase for each new token;
+    #      record the total elapsed time for this path
+    #   3. Compute speedup_factor as the no-cache time divided by the cached time
+    #   4. Return a dict with time_no_cache, time_with_cache, and speedup_factor
     raise NotImplementedError
 
 
@@ -568,18 +588,22 @@ def simulate_naive_allocation(
 
     Returns dict with: total_allocated, total_used, wasted, waste_pct.
     """
-    # TODO: total_allocated = len(sequence_lengths) * max_seq_len
-    #       total_used = sum(sequence_lengths)
-    #       wasted = total_allocated - total_used
-    #       waste_pct = 100.0 * wasted / total_allocated
-    #       return {...}
+    # TODO:
+    #   1. Compute total_allocated as the number of sequences times max_seq_len
+    #      (every sequence is padded to the same maximum length)
+    #   2. Compute total_used as the sum of actual sequence lengths
+    #   3. Compute wasted as the difference between allocated and used
+    #   4. Compute waste_pct as wasted divided by total_allocated, expressed as a percentage
+    #   5. Return a dict with total_allocated, total_used, wasted, and waste_pct
     raise NotImplementedError
 
 
 # Step 26 - get_page_size
 def get_page_size() -> int:
     """Return the fixed page size constant (16 tokens per page)."""
-    # TODO: return 16
+    # TODO:
+    #   1. Return the integer constant 16
+    #      (this is the fixed number of token slots per memory page)
     raise NotImplementedError
 
 
@@ -589,7 +613,10 @@ def create_block_table(n_sequences: int) -> dict:
 
     Calls: (no earlier steps required)
     """
-    # TODO: return {seq_id: [] for seq_id in range(n_sequences)}
+    # TODO:
+    #   1. Create a mapping from each sequence id (0 through n_sequences-1)
+    #      to an empty list that will hold that sequence's page indices
+    #   2. Return the mapping
     raise NotImplementedError
 
 
@@ -612,11 +639,13 @@ def allocate_page_pool(
       free_pages: list[int] of all page indices
     Calls: get_page_size (step 26)
     """
-    # TODO: page_size = get_page_size()
-    #       k_pages = torch.zeros(n_layers, n_pages, n_heads, page_size, d_k, dtype=dtype)
-    #       v_pages = torch.zeros_like(k_pages)
-    #       free_pages = list(range(n_pages))
-    #       return {'k_pages': k_pages, 'v_pages': v_pages, 'free_pages': free_pages}
+    # TODO:
+    #   1. Get the page size constant from get_page_size
+    #   2. Allocate a zero-filled K tensor of shape
+    #      (n_layers, n_pages, n_heads, page_size, d_k) with the given dtype
+    #   3. Allocate an identically shaped zero-filled V tensor
+    #   4. Build a list of all page indices from 0 to n_pages-1 as the initial free list
+    #   5. Return a dict with keys k_pages, v_pages, and free_pages
     raise NotImplementedError
 
 
@@ -631,9 +660,11 @@ def assign_page_to_sequence(
     Returns the allocated page index.
     Calls: (no earlier steps required; pool from step 28, block_table from step 27)
     """
-    # TODO: page_idx = pool['free_pages'].pop(0)
-    #       block_table[seq_id].append(page_idx)
-    #       return page_idx
+    # TODO:
+    #   1. Take one free page from the front of the pool's free-page list
+    #      (raise ValueError if the pool has no free pages left)
+    #   2. Append that page index to the list owned by seq_id in the block table
+    #   3. Return the allocated page index
     raise NotImplementedError
 
 
@@ -653,12 +684,15 @@ def write_kv_to_page(
 
     Calls: get_page_size (step 26)
     """
-    # TODO: page_size = get_page_size()
-    #       page_number = token_pos // page_size
-    #       slot = token_pos % page_size
-    #       page_idx = block_table[seq_id][page_number]
-    #       pool['k_pages'][layer_idx, page_idx, :, slot, :] = k
-    #       pool['v_pages'][layer_idx, page_idx, :, slot, :] = v
+    # TODO:
+    #   1. Get the page size constant from get_page_size
+    #   2. Determine which page number this token_pos falls into
+    #      (integer division of token_pos by page_size)
+    #   3. Determine the slot within that page
+    #      (remainder of token_pos divided by page_size)
+    #   4. Look up the physical page index for seq_id from the block table
+    #   5. Write k into the K pool at that layer, physical page, all heads, and slot
+    #   6. Write v into the V pool at the same location
     raise NotImplementedError
 
 
@@ -676,14 +710,15 @@ def read_kv_via_block_table(
 
     Calls: get_page_size (step 26)
     """
-    # TODO: page_size = get_page_size()
-    #       pages = block_table[seq_id]
-    #       k_chunks, v_chunks = [], []
-    #       for i, page_idx in enumerate(pages):
-    #           slots = min(page_size, seq_len - i * page_size)
-    #           k_chunks.append(pool['k_pages'][layer_idx, page_idx, :, :slots, :])
-    #           v_chunks.append(pool['v_pages'][layer_idx, page_idx, :, :slots, :])
-    #       return torch.cat(k_chunks, dim=1), torch.cat(v_chunks, dim=1)
+    # TODO:
+    #   1. Get the page size constant from get_page_size
+    #   2. Look up the list of physical page indices for seq_id in the block table
+    #   3. For each page in order, calculate how many valid slots it contains
+    #      (the last page may be partially filled — use seq_len to determine this)
+    #   4. Slice the K pool at that layer and physical page for only those valid slots,
+    #      and do the same for the V pool; accumulate each slice into separate lists
+    #   5. Concatenate all the K slices along the sequence dimension into one tensor,
+    #      do the same for V, and return the (k_full, v_full) pair
     raise NotImplementedError
 
 
@@ -698,9 +733,11 @@ def free_pages_on_completion(
     Returns the number of pages freed.
     Calls: (no earlier steps required)
     """
-    # TODO: pages = block_table.pop(seq_id, [])
-    #       pool['free_pages'].extend(pages)
-    #       return len(pages)
+    # TODO:
+    #   1. Remove seq_id's entry from the block table, collecting its list of page indices
+    #      (if seq_id is not present, treat it as having zero pages)
+    #   2. Add all those page indices back to the pool's free-page list
+    #   3. Return how many pages were freed
     raise NotImplementedError
 
 
@@ -720,8 +757,11 @@ def attention_with_paged_kv(
     Calls: read_kv_via_block_table (step 31), scaled_dot_product_attention (step 5)
     """
     # TODO:
-    #   k, v = read_kv_via_block_table(pool, block_table, seq_id, seq_len, layer_idx)
-    #   return scaled_dot_product_attention(q, k, v)
+    #   1. Reconstruct the full K and V tensors for seq_id by calling
+    #      read_kv_via_block_table with the pool, block table, and current seq_len
+    #   2. Run scaled_dot_product_attention using q against those reconstructed K and V
+    #      (no causal mask is needed — paged decode attends only to past tokens)
+    #   3. Return the attention output
     raise NotImplementedError
 
 
@@ -738,12 +778,13 @@ def simulate_static_batching(
 
     Returns dict with: total_compute, useful_compute, wasted_compute_pct.
     """
-    # TODO: total_compute = len(sequence_lengths) * max_seq_len
-    #       useful_compute = sum(sequence_lengths)
-    #       wasted_compute_pct = 100.0 * (total_compute - useful_compute) / total_compute
-    #       return {'total_compute': total_compute,
-    #               'useful_compute': useful_compute,
-    #               'wasted_compute_pct': wasted_compute_pct}
+    # TODO:
+    #   1. Compute total_compute as the number of sequences times max_seq_len
+    #      (static batching runs every sequence to the same maximum length)
+    #   2. Compute useful_compute as the sum of actual sequence lengths
+    #      (work that produces real output tokens)
+    #   3. Compute the wasted fraction as (total - useful) / total, expressed as a percentage
+    #   4. Return a dict with total_compute, useful_compute, and wasted_compute_pct
     raise NotImplementedError
 
 
@@ -752,7 +793,10 @@ import queue
 
 def build_request_queue(requests: list) -> queue.Queue:
     """Wrap a list of requests in a Queue for the continuous batching scheduler."""
-    # TODO: q = queue.Queue(); [q.put(r) for r in requests]; return q
+    # TODO:
+    #   1. Create an empty FIFO queue
+    #   2. Enqueue each request from the list in order
+    #   3. Return the populated queue
     raise NotImplementedError
 
 
@@ -762,7 +806,9 @@ def build_running_batch() -> dict:
 
     Schema: {seq_id: {'input_ids': [...], 'step': int, 'request': dict}}
     """
-    # TODO: return {}
+    # TODO:
+    #   1. Return an empty dict that will later be populated with seq_id keys,
+    #      where each value tracks one active sequence's state
     raise NotImplementedError
 
 
@@ -772,8 +818,13 @@ def add_to_batch(batch: dict, request: dict, seq_id: int) -> None:
 
     Calls: encode (step 2)
     """
-    # TODO: token_ids = encode(request['prompt'], request['token_to_id'])
-    #       batch[seq_id] = {'input_ids': token_ids, 'step': 0, 'request': request}
+    # TODO:
+    #   1. Encode the request's prompt into a list of token ids using encode
+    #   2. Insert a new entry into the batch for seq_id containing:
+    #      - the encoded token id list
+    #      - a step counter starting at 0
+    #      - a reference to the original request dict
+    #   (No return value; modifies batch in-place)
     raise NotImplementedError
 
 
@@ -790,13 +841,16 @@ def iteration_level_scheduler(
     Returns list of seq_ids added this iteration.
     Calls: add_to_batch (step 37)
     """
-    # TODO: added = []
-    #       while len(running_batch) < max_batch_size and not request_queue.empty():
-    #           request = request_queue.get()
-    #           seq_id = max(running_batch.keys(), default=-1) + 1
-    #           add_to_batch(running_batch, request, seq_id)
-    #           added.append(seq_id)
-    #       return added
+    # TODO:
+    #   1. Start with an empty list to track which seq_ids were added this iteration
+    #   2. While the running batch has fewer sequences than max_batch_size
+    #      and the request queue is not empty:
+    #      a. Dequeue the next request
+    #      b. Assign it the next available seq_id
+    #         (one more than the current maximum key, or 0 if the batch is empty)
+    #      c. Call add_to_batch to register it in the running batch
+    #      d. Record the new seq_id in the added list
+    #   3. Return the list of newly added seq_ids
     raise NotImplementedError
 
 
@@ -814,15 +868,17 @@ def batched_decode_step(
     Returns dict mapping seq_id → next_token_id.
     Calls: write_kv_to_page (step 30), sample_next_token (step 14)
     """
-    # TODO: results = {}
-    #       for seq_id, state in running_batch.items():
-    #           logits = model_forward_with_cache(state['input_ids'][-1:], ...)
-    #           next_id = sample_next_token(logits[-1])
-    #           write_kv_to_page(pool, block_table, seq_id, state['step'], ...)
-    #           state['input_ids'].append(next_id)
-    #           state['step'] += 1
-    #           results[seq_id] = next_id
-    #       return results
+    # TODO:
+    #   1. Create an empty dict to collect results for this step
+    #   2. For each sequence in the running batch:
+    #      a. Run model_forward_with_cache on the sequence's last token to get logits
+    #      b. Sample the next token id from those logits using sample_next_token
+    #      c. Write the new K and V into the paged pool at the current step position
+    #         using write_kv_to_page
+    #      d. Append the new token id to the sequence's input_ids list
+    #      e. Increment the sequence's step counter
+    #      f. Record the new token id in the results dict keyed by seq_id
+    #   3. Return the results dict mapping seq_id to next_token_id
     raise NotImplementedError
 
 
@@ -838,15 +894,16 @@ def handle_sequence_completion(
     Returns list of completed seq_ids.
     Calls: free_pages_on_completion (step 32)
     """
-    # TODO: completed = []
-    #       for seq_id, state in list(running_batch.items()):
-    #           last_token = state['input_ids'][-1]
-    #           max_tokens = state['request'].get('max_tokens', 100)
-    #           if last_token == eos_token_id or state['step'] >= max_tokens:
-    #               free_pages_on_completion(pool, block_table, seq_id)
-    #               del running_batch[seq_id]
-    #               completed.append(seq_id)
-    #       return completed
+    # TODO:
+    #   1. Collect a snapshot of all current seq_id/state pairs so removal is safe
+    #   2. For each sequence, check if it has finished:
+    #      - its most recently generated token equals eos_token_id, OR
+    #      - its step count has reached the request's max_tokens limit
+    #   3. If a sequence is done:
+    #      a. Call free_pages_on_completion to return its pages to the pool
+    #      b. Remove it from the running batch
+    #      c. Record its seq_id as completed
+    #   4. Return the list of completed seq_ids
     raise NotImplementedError
 
 
@@ -868,15 +925,16 @@ def run_continuous_batching_loop(
            handle_sequence_completion (step 40)
     """
     # TODO:
-    #   running_batch = build_running_batch()
-    #   block_table = create_block_table(0)
-    #   completed_sequences = []
-    #   while not request_queue.empty() or running_batch:
-    #       iteration_level_scheduler(request_queue, running_batch, max_batch_size)
-    #       batched_decode_step(model_forward_with_cache, running_batch, pool, block_table)
-    #       done = handle_sequence_completion(running_batch, pool, block_table, eos_token_id)
-    #       completed_sequences.extend(done)
-    #   return completed_sequences
+    #   1. Initialize an empty running batch using build_running_batch
+    #   2. Initialize an empty block table using create_block_table
+    #   3. Maintain a list to accumulate completed sequence ids
+    #   4. Loop as long as there are pending requests in the queue
+    #      OR active sequences still in the running batch:
+    #      a. Fill the batch up to max_batch_size by calling iteration_level_scheduler
+    #      b. Run one decode step for every active sequence via batched_decode_step
+    #      c. Identify and evict finished sequences via handle_sequence_completion,
+    #         and extend the completed list with whatever was returned
+    #   5. Return the final list of completed sequence ids
     raise NotImplementedError
 
 
@@ -889,12 +947,14 @@ def benchmark_throughput(
 
     Returns dict with: requests_per_sec, tokens_per_sec, total_requests, total_tokens.
     """
-    # TODO: total_requests = len(completed_sequences)
-    #       total_tokens = sum(len(s.get('output_ids', [])) for s in completed_sequences)
-    #       return {'requests_per_sec': total_requests / total_time,
-    #               'tokens_per_sec': total_tokens / total_time,
-    #               'total_requests': total_requests,
-    #               'total_tokens': total_tokens}
+    # TODO:
+    #   1. Count total_requests as the number of entries in completed_sequences
+    #   2. Sum up total_tokens by accumulating the length of each sequence's output_ids
+    #      (use an empty list as the default if output_ids is absent)
+    #   3. Compute requests_per_sec as total_requests divided by total_time
+    #   4. Compute tokens_per_sec as total_tokens divided by total_time
+    #   5. Return a dict with requests_per_sec, tokens_per_sec,
+    #      total_requests, and total_tokens
     raise NotImplementedError
 
 
@@ -934,7 +994,9 @@ class GenerateResponse(BaseModel):
 
     def tokens_per_second(self) -> float:
         """Return tokens / total_time."""
-        # TODO: return self.tokens_generated / self.total_time if self.total_time > 0 else 0.0
+        # TODO:
+        #   1. If total_time is greater than zero, return tokens_generated divided by total_time
+        #   2. Otherwise return 0.0 to avoid division by zero
         raise NotImplementedError
 
 
@@ -950,14 +1012,16 @@ def initialize_engine(
     Calls: allocate_kv_cache_buffers (step 17), allocate_page_pool (step 28)
     """
     # TODO:
-    #   global _ENGINE
-    #   tokenizer = load tokenizer for model_name
-    #   model = load model for model_name
-    #   cache = allocate_kv_cache_buffers(...)
-    #   pool = allocate_page_pool(page_pool_size, get_page_size(), ...)
-    #   _ENGINE = {'model': model, 'tokenizer': tokenizer,
-    #              'cache': cache, 'pool': pool,
-    #              'max_batch_size': max_batch_size}
+    #   1. Declare access to the module-level _ENGINE singleton
+    #   2. Load the tokenizer and model weights for model_name
+    #      (use an appropriate library such as transformers)
+    #   3. Determine the model's layer count, head count, and d_k from its config
+    #   4. Allocate KV cache buffers by calling allocate_kv_cache_buffers
+    #      with appropriate dimensions derived from the model config
+    #   5. Allocate a paged memory pool by calling allocate_page_pool
+    #      with page_pool_size pages and the model's head/d_k dimensions
+    #   6. Store all of the above in a dict assigned to _ENGINE so subsequent
+    #      calls to get_inference_engine can retrieve it
     raise NotImplementedError
 
 
@@ -967,9 +1031,11 @@ def get_inference_engine() -> dict:
 
     Calls: initialize_engine (step 45) if _ENGINE is None
     """
-    # TODO: global _ENGINE
-    #       if _ENGINE is None: initialize_engine()
-    #       return _ENGINE
+    # TODO:
+    #   1. Declare access to the module-level _ENGINE singleton
+    #   2. If _ENGINE has not been set yet (is None), call initialize_engine
+    #      to load the model and allocate all resources
+    #   3. Return _ENGINE
     raise NotImplementedError
 
 
@@ -986,14 +1052,16 @@ async def streaming_token_generator(
            write_kv_to_page (step 30), read_kv_via_block_table (step 31)
     """
     # TODO:
-    #   input_ids = encode(request.prompt, engine['tokenizer'])
-    #   for step in range(request.max_tokens):
-    #       next_id = sample_next_token(logits, request.temperature,
-    #                                   request.top_k, request.top_p)
-    #       token_str = decode([next_id], engine['tokenizer'])
-    #       yield token_str
-    #       if next_id == eos_token_id: break
-    #   yield '[DONE]'
+    #   1. Encode the request prompt into input ids using encode
+    #   2. Loop up to request.max_tokens times:
+    #      a. Run a forward pass to get logits for the current input
+    #      b. Sample the next token using sample_next_token with the request's
+    #         temperature, top_k, and top_p settings
+    #      c. Write the new K/V into the paged pool at the current step
+    #      d. Decode the single new token id into a string using decode
+    #      e. Yield that token string to the caller
+    #      f. If the token equals the EOS id, stop the loop early
+    #   3. After the loop (or after early stop), yield the sentinel string '[DONE]'
     raise NotImplementedError
 
 
@@ -1004,17 +1072,15 @@ def create_streaming_app():
     Calls: get_inference_engine (step 46), streaming_token_generator (step 47)
     """
     # TODO:
-    #   from fastapi import FastAPI
-    #   from fastapi.responses import StreamingResponse
-    #   app = FastAPI()
-    #
-    #   @app.post('/generate/stream')
-    #   async def stream_generate(request: GenerateRequest):
-    #       engine = get_inference_engine()
-    #       gen = streaming_token_generator(engine, request)
-    #       return StreamingResponse(gen, media_type='text/event-stream')
-    #
-    #   return app
+    #   1. Create a FastAPI application instance
+    #   2. Define a POST route at the path "/generate/stream" that accepts
+    #      a GenerateRequest body
+    #   3. Inside the route handler:
+    #      a. Retrieve the inference engine singleton
+    #      b. Create a streaming token generator for this request
+    #      c. Return a streaming response with the generator,
+    #         using "text/event-stream" as the media type
+    #   4. Return the configured app object
     raise NotImplementedError
 
 
@@ -1026,22 +1092,20 @@ def create_app():
            autoregressive_generate (step 15), decode (step 3)
     """
     # TODO:
-    #   from fastapi import FastAPI
-    #   import time, uuid
-    #   app = FastAPI()
-    #
-    #   @app.post('/generate', response_model=GenerateResponse)
-    #   async def generate(request: GenerateRequest):
-    #       engine = get_inference_engine()
-    #       t0 = time.perf_counter()
-    #       input_ids = encode(request.prompt, engine['tokenizer'])
-    #       output_ids = autoregressive_generate(engine['model'], input_ids,
-    #                                            request.max_tokens, ...)
-    #       text = decode(output_ids.tolist(), engine['tokenizer'])
-    #       elapsed = time.perf_counter() - t0
-    #       return GenerateResponse(generated_text=text, ..., request_id=str(uuid.uuid4()))
-    #
-    #   return app
+    #   1. Create a FastAPI application instance
+    #   2. Define a POST route at the path "/generate" that accepts a GenerateRequest
+    #      body and declares GenerateResponse as the response model
+    #   3. Inside the route handler:
+    #      a. Record the start time
+    #      b. Retrieve the inference engine singleton
+    #      c. Encode the request prompt into input ids
+    #      d. Run autoregressive_generate to produce output ids using the request's
+    #         max_tokens, temperature, top_k, and top_p settings
+    #      e. Decode the output ids back to a string
+    #      f. Compute elapsed time
+    #      g. Return a GenerateResponse populated with the generated text,
+    #         token count, timing info, and a freshly generated unique request id
+    #   4. Return the configured app object
     raise NotImplementedError
 
 
@@ -1053,10 +1117,13 @@ def build_curl_command(
     max_tokens: int = 50,
 ) -> str:
     """Return a curl command string to hit the /generate endpoint."""
-    # TODO: json_payload = json.dumps({'prompt': prompt, 'max_tokens': max_tokens})
-    #       return (f"curl -X POST http://{host}:{port}/generate "
-    #               f"-H 'Content-Type: application/json' "
-    #               f"-d '{json_payload}'")
+    # TODO:
+    #   1. Build a JSON string containing at least the prompt and max_tokens fields
+    #   2. Construct a curl command string that:
+    #      - sends an HTTP POST to http://{host}:{port}/generate
+    #      - sets the Content-Type header to application/json
+    #      - passes the JSON payload as the request body
+    #   3. Return the complete curl command as a string
     raise NotImplementedError
 
 
@@ -1066,11 +1133,12 @@ def parse_sse_response(raw_response: str) -> list[str]:
 
     Filters out 'data: [DONE]', empty lines, and 'data: ' prefixes.
     """
-    # TODO: tokens = []
-    #       for line in raw_response.splitlines():
-    #           if line.startswith('data: ') and '[DONE]' not in line:
-    #               tokens.append(line[len('data: '):])
-    #       return tokens
+    # TODO:
+    #   1. Split the raw response text into individual lines
+    #   2. For each line, keep it only if it starts with the SSE "data: " prefix
+    #      AND does not contain the "[DONE]" sentinel
+    #   3. Strip the "data: " prefix from each kept line to extract the token string
+    #   4. Return the collected token strings as a list
     raise NotImplementedError
 
 
@@ -1093,8 +1161,12 @@ def compute_metrics(
                             tpot_mean, tpot_p50, tpot_p95, tpot_p99,
                             tokens_per_sec.
     """
-    # TODO: for each list compute np.mean, np.percentile(x, 50/95/99);
-    #       tokens_per_sec = total_tokens / total_time
+    # TODO:
+    #   1. For the TTFT list, compute the mean and the 50th, 95th, and 99th percentiles
+    #   2. Do the same for the TPOT list
+    #   3. Compute tokens_per_sec as total_tokens divided by total_time
+    #   4. Return a dict with keys ttft_mean, ttft_p50, ttft_p95, ttft_p99,
+    #      tpot_mean, tpot_p50, tpot_p95, tpot_p99, and tokens_per_sec
     raise NotImplementedError
 
 
@@ -1114,14 +1186,15 @@ def generate_synthetic_requests(
     Each dict has keys: prompt (str of space-separated integers), max_tokens (int).
     Uses np.random with the given seed for reproducibility.
     """
-    # TODO: rng = np.random.default_rng(seed)
-    #       requests = []
-    #       for _ in range(n):
-    #           prompt_len = rng.integers(min_prompt_len, max_prompt_len + 1)
-    #           max_tokens = rng.integers(min_max_tokens, max_max_tokens + 1)
-    #           prompt = ' '.join(str(x) for x in rng.integers(0, 1000, size=prompt_len))
-    #           requests.append({'prompt': prompt, 'max_tokens': int(max_tokens)})
-    #       return requests
+    # TODO:
+    #   1. Initialize a reproducible random number generator using the given seed
+    #   2. Build a list of n request dicts by repeating the following:
+    #      a. Sample a random prompt length between min_prompt_len and max_prompt_len
+    #      b. Sample a random max_tokens between min_max_tokens and max_max_tokens
+    #      c. Generate that many random integers (0–999) and join them with spaces
+    #         to form the prompt string
+    #      d. Store the prompt and max_tokens in a dict and append it to the list
+    #   3. Return the list of request dicts
     raise NotImplementedError
 
 
@@ -1139,13 +1212,16 @@ def run_single_request_benchmark(
     Calls: engine_fn which internally uses encode (step 2) and
            autoregressive_generate (step 15)
     """
-    # TODO: for _ in range(n_warmup): engine_fn(request)  # warm up
-    #       t0 = time.perf_counter()
-    #       result = engine_fn(request)
-    #       ttft = ...  # time to first token from the result or timed separately
-    #       tpot = (time.perf_counter() - t0) / max(result['tokens_generated'], 1)
-    #       return {'ttft': ttft, 'tpot': tpot,
-    #               'tokens_generated': result['tokens_generated']}
+    # TODO:
+    #   1. Run n_warmup warm-up calls to engine_fn with the request to prime caches
+    #      and exclude cold-start effects from measurements
+    #   2. Record the wall-clock start time
+    #   3. Call engine_fn once more with the request and capture the result
+    #   4. Determine TTFT (time-to-first-token) — either from timing the first token
+    #      separately inside engine_fn, or from the result's recorded timing field
+    #   5. Compute TPOT (per-output-token time) as the total elapsed time divided by
+    #      the number of tokens generated (guard against division by zero)
+    #   6. Return a dict with ttft, tpot, and tokens_generated
     raise NotImplementedError
 
 
@@ -1163,16 +1239,18 @@ async def run_concurrent_benchmark(
                        latency_results (list of per-request dicts).
     Calls: run_single_request_benchmark (step 54)
     """
-    # TODO: semaphore = asyncio.Semaphore(concurrency)
-    #       async def bounded(req):
-    #           async with semaphore:
-    #               return run_single_request_benchmark(engine_fn, req)
-    #       t0 = time.perf_counter()
-    #       results = await asyncio.gather(*[bounded(r) for r in requests])
-    #       elapsed = time.perf_counter() - t0
-    #       total_tokens = sum(r['tokens_generated'] for r in results)
-    #       return {'total_time': elapsed, 'throughput_rps': len(requests)/elapsed,
-    #               'throughput_tps': total_tokens/elapsed, 'latency_results': results}
+    # TODO:
+    #   1. Create an async semaphore limiting simultaneous in-flight requests
+    #      to the given concurrency level
+    #   2. Define an inner async helper that acquires the semaphore before calling
+    #      run_single_request_benchmark and releases it afterward
+    #   3. Record the wall-clock start time
+    #   4. Launch all requests concurrently by gathering the bounded helpers,
+    #      one per request in the list
+    #   5. Record elapsed time after all requests complete
+    #   6. Sum up total tokens generated across all per-request results
+    #   7. Return a dict with total_time, throughput in requests per second,
+    #      throughput in tokens per second, and the list of per-request latency dicts
     raise NotImplementedError
 
 
@@ -1187,16 +1265,15 @@ def plot_latency_vs_batch_size(
     Calls: compute_metrics (step 52) — results are pre-computed summaries
     """
     # TODO:
-    #   import matplotlib.pyplot as plt
-    #   batch_sizes = [r['batch_size'] for r in results]
-    #   fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 5))
-    #   ax1.plot(batch_sizes, [r['ttft_mean'] for r in results], marker='o')
-    #   ax1.set(title='TTFT vs Batch Size', xlabel='Batch Size', ylabel='TTFT (s)')
-    #   ax2.plot(batch_sizes, [r['tpot_mean'] for r in results], marker='s')
-    #   ax2.set(title='TPOT vs Batch Size', xlabel='Batch Size', ylabel='TPOT (s)')
-    #   plt.tight_layout()
-    #   if save_path: plt.savefig(save_path)
-    #   plt.show()
+    #   1. Extract the batch_size, ttft_mean, and tpot_mean values from each result dict
+    #   2. Create a figure with two side-by-side subplots
+    #   3. In the left subplot, plot ttft_mean against batch_size with axis labels
+    #      "Batch Size" (x) and "TTFT (s)" (y), titled "TTFT vs Batch Size"
+    #   4. In the right subplot, plot tpot_mean against batch_size with axis labels
+    #      "Batch Size" (x) and "TPOT (s)" (y), titled "TPOT vs Batch Size"
+    #   5. Apply tight layout to avoid overlapping labels
+    #   6. If save_path is provided, save the figure to that file path
+    #   7. Display the figure
     raise NotImplementedError
 
 
@@ -1211,20 +1288,15 @@ def plot_throughput_vs_concurrency(
     Calls: run_concurrent_benchmark (step 55) — results are pre-computed summaries
     """
     # TODO:
-    #   import matplotlib.pyplot as plt
-    #   concurrencies = [r['concurrency'] for r in results]
-    #   throughputs = [r['throughput_tps'] for r in results]
-    #   peak_idx = throughputs.index(max(throughputs))
-    #   fig, ax = plt.subplots(figsize=(8, 5))
-    #   ax.plot(concurrencies, throughputs, marker='o')
-    #   ax.annotate(f"Peak: {throughputs[peak_idx]:.0f} tok/s",
-    #               xy=(concurrencies[peak_idx], throughputs[peak_idx]),
-    #               xytext=(+20, -20), textcoords='offset points',
-    #               arrowprops=dict(arrowstyle='->'))
-    #   ax.set(title='Throughput vs Concurrency', xlabel='Concurrency',
-    #          ylabel='Throughput (tokens/sec)')
-    #   if save_path: plt.savefig(save_path)
-    #   plt.show()
+    #   1. Extract the concurrency and throughput_tps values from each result dict
+    #   2. Find the index of the peak throughput value
+    #   3. Create a single-axis figure
+    #   4. Plot throughput_tps against concurrency
+    #   5. Add an annotation arrow pointing to the peak data point,
+    #      labelled with the peak tokens-per-second value
+    #   6. Set the axis title to "Throughput vs Concurrency" with appropriate axis labels
+    #   7. If save_path is provided, save the figure to that file path
+    #   8. Display the figure
     raise NotImplementedError
 
 
@@ -1239,14 +1311,13 @@ def write_benchmark_report(
     Calls: compute_metrics (step 52)
     """
     # TODO:
-    #   header = f"{'Metric':<25} {'Value':>15}\n" + '-' * 42
-    #   rows = [header]
-    #   for key, value in results.items():
-    #       rows.append(f"{key:<25} {value:>15.4f}")
-    #   report = '\n'.join(rows)
-    #   if output_path:
-    #       with open(output_path, 'w') as f: f.write(report)
-    #   return report
+    #   1. Build a header row with "Metric" left-aligned and "Value" right-aligned,
+    #      followed by a horizontal divider line
+    #   2. For each key-value pair in results, format the metric name left-aligned
+    #      and the numeric value right-aligned to four decimal places
+    #   3. Join all rows (header + data rows) into a single multi-line report string
+    #   4. If output_path is provided, write the report string to that file
+    #   5. Return the report string
     raise NotImplementedError
 
 
