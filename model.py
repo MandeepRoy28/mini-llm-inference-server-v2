@@ -363,6 +363,16 @@ def autoregressive_generate(
     #   5. If the new token equals eos_token_id, stop early
     #   6. Return the full sequence of input_ids including generated tokens
     
+    for _ in range(max_new_tokens) :
+        logits = model_forward(input_ids)
+        last_logit = logits[-1]
+        next_token_id = sample_next_token(last_logit, temperature, top_k, top_p)
+        next_token_id_tensor = torch.tensor(next_token_id).unsqueeze(0)
+        input_ids = torch.cat([input_ids, next_token_id_tensor], dim=-1)
+        if eos_token_id and eos_token_id == next_token_id.item() :
+            break
+
+    return input_ids
 
 
 # Step 16 - generate_with_prompt
