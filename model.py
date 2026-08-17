@@ -397,7 +397,15 @@ def generate_with_prompt(
     #      max_new_tokens, and the temperature setting
     #   4. Convert the output tensor to a plain list of ids and decode back to a string
     #   5. Return the decoded string
-    raise NotImplementedError
+    input_ids = encode(prompt, token_to_id)
+    input_ids = torch.tensor(input_ids, dtype=torch.long)
+    generated_input_ids = autoregressive_generate(
+        model_forward=model_forward, input_ids=input_ids, max_new_tokens=max_new_tokens, temperature=temperature
+        )
+    generated_input_ids_list = generated_input_ids.tolist()
+    generated_output = decode(generated_input_ids_list, id_to_token)
+    return generated_output
+
 
 
 # ---------------------------------------------------------------------------
