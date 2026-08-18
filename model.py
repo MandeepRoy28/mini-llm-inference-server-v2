@@ -557,8 +557,14 @@ def decode_phase(
     #      and the current step position so the cache slot is written correctly
     #   3. Extract the logits for that single output position
     #   4. Call sample_next_token with those logits and the temperature to get next_id
-    #   5. Return (next_id, logits)
-    raise NotImplementedError
+    #   5. Return (next_id, updated_cache)
+    last_token_id = torch.tensor(last_token_id, dtype=torch.long)
+    last_token_id = last_token_id.unsqueeze(0).unsqueeze(0)
+
+    logits, updated_cache = model_forward_with_cache(last_token_id, cache) # logit shape [1, 1, vocab]
+    next_token_id = sample_next_token(logits[0, 0, :], temperature)
+
+    return (next_token_id, updated_cache)
 
 
 # Step 23 - benchmark_no_cache
