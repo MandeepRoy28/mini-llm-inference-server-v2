@@ -460,7 +460,8 @@ def write_kv_to_cache(
     #   2. Write k into the K buffer at position step (all batches, all heads)
     #   3. Write v into the V buffer at position step (all batches, all heads)
     #   (Both writes are in-place; return nothing)
-    raise NotImplementedError
+    cache[layer_idx]['k'][:,:,step:step+1,:] = k
+    cache[layer_idx]['v'][:,:,step:step+1,:] = v
 
 
 # Step 19 - read_kv_from_cache
