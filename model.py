@@ -532,7 +532,9 @@ def prefill_phase(
     #   2. Record the prompt length from input_ids' sequence dimension
     #   3. Return only the logits at the last prompt position together with the prompt length
     #      (the caller uses these logits to sample the first new token)
-    raise NotImplementedError
+    logits, kv_cache = model_forward_with_cache(input_ids, cache)
+    lenght = input_ids.shape[-1]
+    return logits[:,-1,:], kv_cache
 
 
 # Step 22 - decode_phase
