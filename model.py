@@ -433,8 +433,16 @@ def allocate_kv_cache_buffers(
     #   2. Each dict holds a zero-filled K tensor and a zero-filled V tensor,
     #      both of shape (batch_size, n_heads, max_seq_len, d_k) with the given dtype
     #   3. Return the list
-    raise NotImplementedError
-
+    kv_cache_list = []
+    for _ in range(n_layers):
+        k = torch.zeros(size=[batch_size, n_heads, max_seq_len, d_k], dtype=dtype)
+        v = torch.zeros(size=[batch_size, n_heads, max_seq_len, d_k], dtype=dtype)
+        kv_cache_list.append({
+            'k' : k,
+            'v' : v
+        })
+    
+    return kv_cache_list
 
 # Step 18 - write_kv_to_cache
 import torch
@@ -470,7 +478,14 @@ def read_kv_from_cache(
     #      (all batches, all heads, positions 0..current_len-1, all d_k)
     #   3. Do the same slice for the V buffer
     #   4. Return the (k_slice, v_slice) pair
-    raise NotImplementedError
+    cur_cache = cache[layer_idx]
+    k = cur_cache['k']
+    v = cur_cache['v']
+
+    k = k[:,:,0:current_len,:]
+    v = v[:,:,0:current_len,:]
+
+    return (k,v)
 
 
 # Step 20 - attention_with_kv_cache
