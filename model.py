@@ -508,7 +508,9 @@ def attention_with_kv_cache(
     #   2. Run scaled_dot_product_attention with q against those cached keys and values
     #      (no causal mask is needed during decoding — past tokens are already fixed)
     #   3. Return the attention output
-    raise NotImplementedError
+    K,V = read_kv_from_cache(cache, layer_idx, current_len) 
+    O = scaled_dot_product_attention(q, K, V)
+    return O
 
 
 # Step 21 - prefill_phase
