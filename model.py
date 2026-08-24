@@ -365,7 +365,7 @@ def autoregressive_generate(
     
     for _ in range(max_new_tokens) :
         logits = model_forward(input_ids)
-        last_logit = logits[-1]
+        last_logit = logits.reshape(-1, logits.size(-1))[-1]
         next_token_id = sample_next_token(last_logit, temperature, top_k, top_p)
         next_token_id_tensor = torch.tensor(next_token_id).unsqueeze(0)
         input_ids = torch.cat([input_ids, next_token_id_tensor], dim=-1)
@@ -581,13 +581,22 @@ def benchmark_no_cache(
     Returns dict with keys: total_time, steps, tokens_per_sec.
     Calls: autoregressive_generate (step 15)
     """
-    # TODO:
+    # TODO :
     #   1. Record the wall-clock start time
     #   2. Run autoregressive_generate for n_steps new tokens (no cache)
     #   3. Record elapsed time after generation completes
     #   4. Return a summary dict containing total_time, the number of steps,
     #      and tokens_per_sec computed as n_steps divided by elapsed time
-    raise NotImplementedError
+    start_time = time.perf_counter() 
+    input_ids = autoregressive_generate(model_forward, input_ids, n_steps)
+    elapsed = time.perf_counter() - start_time
+
+    return {
+        "total_time" : elapsed,
+        "steps" : n_steps,
+        "token_per_sec" : n_steps/elapsed
+    }
+
 
 
 # Step 24 - benchmark_kv_cache_speedup
