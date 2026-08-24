@@ -623,7 +623,26 @@ def benchmark_kv_cache_speedup(
     #      record the total elapsed time for this path
     #   3. Compute speedup_factor as the no-cache time divided by the cached time
     #   4. Return a dict with time_no_cache, time_with_cache, and speedup_factor
-    raise NotImplementedError
+    benchmark_dict = benchmark_no_cache(model_forward, input_ids, n_new_tokens)
+    no_cache_time = benchmark_dict['total_time']
+
+    start_time = time.perf_counter()
+    last_logits, kv_cache = prefill_phase(model_forward_with_cache, input_ids, None)
+    next_id = sample_next_token(last_logits)
+
+    for step in range(n_new_tokens) :
+        next_id, kv_cache = decode_phase(model_forward_with_cache, next_id, kv_cache, input_ids.shape[-1]+step)
+
+    with_cache_time = time.perf_counter() - start_time
+
+    return {
+        'no_cache_time' : no_cache_time,
+        'with_cache_time' : with_cache_time,
+        'speedup_factor' : no_cache_time/with_cache_time,
+        'tokens_per_sec_no_cache' : n_new_tokens/no_cache_time,
+        'tokens_per_sec_with_cache' : n_new_tokens/with_cache_time
+    }
+
 
 
 # ---------------------------------------------------------------------------
