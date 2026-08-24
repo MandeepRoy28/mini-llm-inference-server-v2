@@ -586,15 +586,15 @@ def benchmark_no_cache(
     #   2. Run autoregressive_generate for n_steps new tokens (no cache)
     #   3. Record elapsed time after generation completes
     #   4. Return a summary dict containing total_time, the number of steps,
-    #      and tokens_per_sec computed as n_steps divided by elapsed time
+    #      and time_per_token computed as elapsed time divided by n_steps
     start_time = time.perf_counter() 
     input_ids = autoregressive_generate(model_forward, input_ids, n_steps)
     elapsed = time.perf_counter() - start_time
 
     return {
         "total_time" : elapsed,
-        "steps" : n_steps,
-        "token_per_sec" : n_steps/elapsed
+        "n_tokens" : n_steps,
+        "time_per_token" : elapsed/n_steps
     }
 
 
