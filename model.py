@@ -699,7 +699,11 @@ def create_block_table(n_sequences: int) -> dict:
     #   1. Create a mapping from each sequence id (0 through n_sequences-1)
     #      to an empty list that will hold that sequence's page indices
     #   2. Return the mapping
-    raise NotImplementedError
+    block_table_map = {}
+    for seq_id in range(n_sequences) :
+        block_table_map[seq_id] = []
+
+    return block_table_map
 
 
 # Step 28 - allocate_page_pool
