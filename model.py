@@ -790,7 +790,15 @@ def write_kv_to_page(
     #   4. Look up the physical page index for seq_id from the block table
     #   5. Write k into the K pool at that layer, physical page, all heads, and slot
     #   6. Write v into the V pool at the same location
-    raise NotImplementedError
+    page_size = get_page_size()
+    page_number = token_pos // page_size
+    slot_number = token_pos % page_size 
+    page_idx = block_table[page_number][slot_number]
+
+    pool['k_pages'][layer_idx, page_idx, :, slot_number, :] = k
+    pool['v_pages'][layer_idx, page_idx, :, slot_number, :] = v 
+
+
 
 
 # Step 31 - read_kv_via_block_table
