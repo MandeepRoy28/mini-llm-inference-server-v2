@@ -683,8 +683,8 @@ def test_028_allocate_page_pool():
         pool = fn(10, 16, 4, 64, 6)
     except NotImplementedError:
         pytest.skip("Step 028 not implemented")
-    assert pool['k_pages'].shape == (6, 10, 16, 4, 64)
-    assert pool['v_pages'].shape == (6, 10, 16, 4, 64)
+    assert pool['k_pages'].shape == (6, 10, 4, 16, 64)
+    assert pool['v_pages'].shape == (6, 10, 4, 16, 64)
     assert len(pool['free_pages']) == 10
 
 
@@ -730,7 +730,7 @@ def test_030_write_kv_to_page():
     except NotImplementedError:
         pytest.skip("Step 030 not implemented")
     # Verify value stored at layer 0, page 0, slot 0
-    stored_k = pool['k_pages'][0, 0, 0]  # (n_heads, d_k)
+    stored_k = pool['k_pages'][0, 0, :, 0, :]  # (n_heads, d_k)
     assert stored_k.sum().item() == pytest.approx(n_heads * d_k * 5.0)
 
 

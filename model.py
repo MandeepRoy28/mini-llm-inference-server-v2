@@ -732,7 +732,16 @@ def allocate_page_pool(
     #   3. Allocate an identically shaped zero-filled V tensor
     #   4. Build a list of all page indices from 0 to n_pages-1 as the initial free list
     #   5. Return a dict with keys k_pages, v_pages, and free_pages
-    raise NotImplementedError
+    page_size = get_page_size()
+    k_pages = torch.zeros([n_layers, n_pages, n_heads, page_size, d_k], dtype=torch.float32)
+    v_pages = torch.zeros([n_layers, n_pages, n_heads, page_size, d_k], dtype=torch.float32)
+    free_pages = list(range(n_pages))
+
+    return {
+        'k_pages' : k_pages,
+        'v_pages' : v_pages,
+        'free_pages' : free_pages
+    }
 
 
 # Step 29 - assign_page_to_sequence
