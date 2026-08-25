@@ -666,8 +666,18 @@ def simulate_naive_allocation(
     #   2. Compute total_used as the sum of actual sequence lengths
     #   3. Compute wasted as the difference between allocated and used
     #   4. Compute waste_pct as wasted divided by total_allocated, expressed as a percentage
-    #   5. Return a dict with total_allocated, total_used, wasted, and waste_pct
-    raise NotImplementedError
+    #   5. Return a dict with total_allocated, total_used, wasted_slots, and waste_percentage
+    total_allocated = len(sequence_lengths)*max_seq_len
+    total_used = sum(sequence_lengths)
+    wasted = total_allocated - total_used 
+    waste_pct = (wasted/total_allocated)*100 
+
+    return {
+        "total_allocated" : total_allocated,
+        "total_used" : total_used,
+        "wasted_slots" : wasted,
+        "waste_percentage" : waste_pct
+    }
 
 
 # Step 26 - get_page_size
