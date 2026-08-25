@@ -760,7 +760,9 @@ def assign_page_to_sequence(
     #      (raise ValueError if the pool has no free pages left)
     #   2. Append that page index to the list owned by seq_id in the block table
     #   3. Return the allocated page index
-    raise NotImplementedError
+    page_idx = pool['free_pages'].pop(0)
+    block_table[seq_id].append(page_idx)
+    return page_idx
 
 
 # Step 30 - write_kv_to_page
