@@ -686,7 +686,7 @@ def get_page_size() -> int:
     # TODO:
     #   1. Return the integer constant 16
     #      (this is the fixed number of token slots per memory page)
-    raise NotImplementedError
+    return 16
 
 
 # Step 27 - create_block_table
