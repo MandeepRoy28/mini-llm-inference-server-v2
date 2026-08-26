@@ -855,7 +855,11 @@ def free_pages_on_completion(
     #      (if seq_id is not present, treat it as having zero pages)
     #   2. Add all those page indices back to the pool's free-page list
     #   3. Return how many pages were freed
-    raise NotImplementedError
+    pages = block_table.pop(seq_id, [])
+    pool['free_pages'].extend(pages)
+    return len(pages)
+
+
 
 
 # Step 33 - attention_with_paged_kv
