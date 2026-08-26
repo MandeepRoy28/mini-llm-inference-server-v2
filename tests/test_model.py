@@ -775,7 +775,7 @@ def test_032_free_pages_on_completion():
     except NotImplementedError:
         pytest.skip("Step 032 not implemented")
     assert freed == 2
-    assert bt[0] == []
+    assert 0 not in bt    # key removed after freeing
     # Pool should have all pages back
     assert 0 in pool['free_pages']
     assert 1 in pool['free_pages']
