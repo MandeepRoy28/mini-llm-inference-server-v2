@@ -824,7 +824,19 @@ def read_kv_via_block_table(
     #      and do the same for the V pool; accumulate each slice into separate lists
     #   5. Concatenate all the K slices along the sequence dimension into one tensor,
     #      do the same for V, and return the (k_full, v_full) pair
-    raise NotImplementedError
+    page_size = get_page_size()
+    page_ids = block_table[seq_id]
+    k_chunks, v_chunks = [], []
+
+    for i, page_idx in enumerate(page_ids) :
+        slots = min(page_size, seq_len - i*page_size)
+        k_chunk = pool['k_pages'][layer_idx, page_idx, :, :slots, :].permute(1, 0, 2)
+        v_chunk = pool['v_pages'][layer_idx, page_idx, :, :slots, :].permute(1, 0, 2)
+
+        k_chunks.append(k_chunk)
+        v_chunks.append(v_chunk)
+
+    return torch.cat(k_chunks, dim=0), torch.cat(v_chunks, dim=0)
 
 
 # Step 32 - free_pages_on_completion
