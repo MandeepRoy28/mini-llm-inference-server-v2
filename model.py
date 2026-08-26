@@ -883,7 +883,9 @@ def attention_with_paged_kv(
     #   2. Run scaled_dot_product_attention using q against those reconstructed K and V
     #      (no causal mask is needed — paged decode attends only to past tokens)
     #   3. Return the attention output
-    raise NotImplementedError
+    k, v = read_kv_via_block_table(pool, block_table, seq_id, seq_len, layer_idx)
+    o = scaled_dot_product_attention(q, k, v, None)
+    return o.squeeze(0)
 
 
 # ---------------------------------------------------------------------------
