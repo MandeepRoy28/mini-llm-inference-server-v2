@@ -23,19 +23,24 @@ import numpy as np
 
 # Step 1 - build_token_vocab
 import torch
+import string
 
 def build_token_vocab(text: str) -> tuple[dict, dict]:
     """Build token→id and id→token dicts from whitespace-split text."""
     # TODO: split text on whitespace, deduplicate preserving order, assign
     #       integer ids starting at 0, return (token_to_id, id_to_token)
+    #clean_text = text.translate(str.maketrans("", "", string.punctuation))
+
+    tokens = text.split()
+
     token_to_id = {}
     id_to_token = {}
-    words = text.split()
-    for i in range(0, len(words)):
-        if words[i] in token_to_id :
-            continue
-        token_to_id[words[i]] = i
-        id_to_token[i] = words[i]
+
+    for id, token in enumerate(tokens):
+        if token in token_to_id.keys() :
+            continue 
+        token_to_id[token] = id 
+        id_to_token[id] = token
 
     return (token_to_id, id_to_token)
 
