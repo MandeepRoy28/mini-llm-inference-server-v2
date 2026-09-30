@@ -119,25 +119,27 @@ def multi_head_attention_forward(
 
     Calls: scaled_dot_product_attention (step 5)
     """
-    # TODO: project x → Q, K, V; reshape to (B, n_heads, T, d_k);
-    #       call scaled_dot_product_attention per head (or batched);
-    #       concatenate heads; project through W_o
-    Q = x@W_q
-    K = x@W_v
-    V = x@W_k 
-
-    seq_len = Q.size(-2)
-    d_model = Q.size(-1)
-    d_k = d_model//n_heads
-
-    Q = Q.reshape(-1, seq_len, n_heads, d_k).transpose(1,2)
-    K = K.reshape(-1, seq_len, n_heads, d_k).transpose(1,2)
-    V = V.reshape(-1, seq_len, n_heads, d_k).transpose(1,2)
+    Q, K, V = x@W_q, x@W_k, x@W_v # [batch, seq_len, d_model]
+    # [batch, seq_len, d_model]
+    d_model =  Q.shape[-1]
+    # [batch, seq_len, n_head, d_model/n_head] -> [batch, n_head, seq_len, d_model/n_head] -> [batch, seq_len, d_model]
+    def prepare_for_multihead(m : torch.Tensor, n_heads:int, d_model:int):
+        m = m.reshape(*m.shape[:-1],n_heads, d_model//n_heads)
+        m = m.transpose(-2, -3)
+        return m
+    
+    Q = prepare_for_multihead(Q, n_heads, d_model)
+    K = prepare_for_multihead(K, n_heads, d_model)
+    V = prepare_for_multihead(V, n_heads, d_model)
 
     O = scaled_dot_product_attention(Q, K, V, mask)
-    O = O.transpose(1,2)
-    O = O.reshape(-1, seq_len, d_model)
-    return O@W_o
+    O = O.transpose(-2, -3)
+    O = O.reshape(*O.shape[:-2], d_model)
+
+    return O @ W_o
+    
+
+
 
 
 
