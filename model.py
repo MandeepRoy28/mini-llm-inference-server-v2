@@ -140,10 +140,6 @@ def multi_head_attention_forward(
     
 
 
-
-
-
-
 # Step 7 - feed_forward_block
 import torch
 import torch.nn.functional as F
@@ -156,11 +152,10 @@ def feed_forward_block(
     b2: torch.Tensor,
 ) -> torch.Tensor:
     """Two-layer feed-forward: Linear → GELU → Linear."""
-    # TODO: x = F.gelu(x @ W1 + b1); return x @ W2 + b2
-    x = x@W1 + b1 
+    x = x@W1 + b1
     x = F.gelu(x)
     x = x@W2 + b2
-    return x
+    return x 
 
 
 # Step 8 - transformer_block
