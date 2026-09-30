@@ -29,9 +29,8 @@ def build_token_vocab(text: str) -> tuple[dict, dict]:
     """Build token→id and id→token dicts from whitespace-split text."""
     # TODO: split text on whitespace, deduplicate preserving order, assign
     #       integer ids starting at 0, return (token_to_id, id_to_token)
-    #clean_text = text.translate(str.maketrans("", "", string.punctuation))
-
-    tokens = text.split()
+    clean_text = text.translate(str.maketrans("", "", string.punctuation))
+    tokens = clean_text.split()
 
     token_to_id = {}
     id_to_token = {}
@@ -51,13 +50,9 @@ import torch
 def encode(text: str, token_to_id: dict) -> list[int]:
     """Split on whitespace and look up each token in token_to_id."""
     # TODO: split text on whitespace, map each token to its id via token_to_id
-    words = text.split()
-    token_id = []
+    tokens = text.split()
+    return [token_to_id[token] for token in tokens]
     
-    for word in words :
-        token_id.append(token_to_id[word])
-
-    return token_id
 
 
 # Step 3 - decode
