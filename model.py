@@ -172,19 +172,16 @@ def transformer_block(
 
     Calls: multi_head_attention_forward (step 6), feed_forward_block (step 7)
     """
-    # TODO:
-    #   1. LayerNorm x using attn_params gamma/beta → ln1
-    #   2. Run multi_head_attention_forward on ln1 using W_q, W_k, W_v, W_o from attn_params
-    #   3. Add result to x (residual connection)
-    #   4. LayerNorm x using ffn_params gamma/beta → ln2
-    #   5. Run feed_forward_block on ln2 using W1, b1, W2, b2 from ffn_params
-    #   6. Add result to x (residual connection)
-    #   7. Return x
-    ln1 = torch.layer_norm(x, [x.size(-1)], attn_params['gamma_1'], attn_params['beta_1'])
+    ln1 = torch.layer_norm(x, [x.shape[-1]], attn_params['gamma_1'], attn_params['beta_1']) 
     x = x + multi_head_attention_forward(
-        ln1, attn_params['W_q'], attn_params['W_k'], attn_params['W_v'], attn_params['W_o'], n_heads, mask)
-    ln2 = torch.layer_norm(x, [x.size(-1)], ffn_params['gamma_2'], ffn_params['beta_2'])
-    x = x + feed_forward_block(ln2, ffn_params['W1'], ffn_params['b1'], ffn_params['W2'], ffn_params['b2'])
+        ln1, attn_params['W_q'], attn_params['W_k'], attn_params['W_v'], attn_params['W_o'], n_heads, mask
+        )
+    
+    ln2 = torch.layer_norm(x, [x.shape[-1]], ffn_params['gamma_2'], ffn_params['beta_2'])
+    x = x + feed_forward_block(
+        ln2, ffn_params['W1'], ffn_params['b1'], ffn_params['W2'], ffn_params['b2']
+        )
+    
     return x
 
 
