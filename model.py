@@ -94,16 +94,13 @@ def scaled_dot_product_attention(
 
     mask: bool tensor where True positions receive -1e9 before softmax.
     """
-    # TODO: d_k = Q.size(-1); scores = Q @ K.transpose(-2, -1) / sqrt(d_k);
-    #       if mask: scores = scores.masked_fill(mask, -1e9);
-    #       return softmax(scores, dim=-1) @ V
-    d_k = Q.size(-1)
-    scores = Q @ K.transpose(-2, -1) / math.sqrt(d_k)
-
+    d_k = Q.shape[-1]
+    attn = (Q @ K.transpose(-2, -1)/(math.sqrt(d_k)))
     if mask is not None :
-        scores = scores.masked_fill(mask, -1e9)
+        attn = attn.masked_fill(mask, -1e9)
+    attn_score = torch.softmax(attn, dim=-1)
+    return attn_score @ V
     
-    return torch.softmax(scores, dim=-1)@V 
 
 
 # Step 6 - multi_head_attention_forward
