@@ -125,6 +125,27 @@
   #diagram-area.visible { display: block; }
   #grid-area.hidden-view { display: none; }
 
+  /* Step Diagram view */
+  #stepdiagram-area { flex: 1; display: none; overflow: hidden; }
+  #stepdiagram-area.visible { display: flex; }
+  #stepdiagram-layout { display: flex; gap: 16px; width: 100%; height: 100%; padding: 20px 24px; }
+  #stepdiagram-list { width: 260px; min-width: 220px; overflow-y: auto; }
+  .sd-part-label { font-size: 10px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); margin: 14px 0 6px; padding-left: 4px; }
+  .sd-part-label:first-child { margin-top: 0; }
+  .sd-item { padding: 7px 10px; border-radius: 6px; cursor: pointer; font-size: 12px; color: #c8d3e8; border-left: 3px solid transparent; margin-bottom: 2px; transition: all .12s; }
+  .sd-item:hover { background: rgba(255,255,255,0.05); color: var(--text); }
+  .sd-item.active { background: rgba(255,255,255,0.08); color: var(--text); font-weight: 600; }
+  #stepdiagram-viewer { flex: 1; overflow-y: auto; }
+  .sd-viewer-head { margin-bottom: 14px; }
+  .sd-viewer-num { font-size: 11px; color: var(--muted); letter-spacing: 0.06em; text-transform: uppercase; margin-bottom: 4px; }
+  .sd-viewer-name { font-size: 18px; font-weight: 700; margin-bottom: 4px; }
+  .sd-viewer-brief { font-size: 13px; color: #c8d3e8; margin-bottom: 14px; }
+  .sd-diagram-box {
+    background: #0d1117; border: 1px solid var(--border); border-radius: 8px;
+    padding: 18px 20px; font-family: 'Fira Code','Cascadia Code',monospace;
+    font-size: 12.5px; color: #a8d8ff; line-height: 1.55; white-space: pre; overflow-x: auto;
+  }
+
   /* SVG diagram hover effects */
   .diag-part { cursor: pointer; }
   .diag-part:hover rect:first-child { filter: brightness(1.2); }
@@ -209,6 +230,7 @@
       <div class="view-toggle">
         <button class="view-btn active" id="btn-grid" onclick="switchView('grid')">Grid</button>
         <button class="view-btn" id="btn-diagram" onclick="switchView('diagram')">Block Diagram</button>
+        <button class="view-btn" id="btn-stepdiagram" onclick="switchView('stepdiagram')">Step Diagrams</button>
       </div>
     </div>
   </div>
@@ -439,6 +461,14 @@
         <div class="trace-explain" id="trace-explain">—</div>
       </div>
 
+    </div>
+
+    <!-- ===== STEP DIAGRAM VIEW ===== -->
+    <div id="stepdiagram-area">
+      <div id="stepdiagram-layout">
+        <div id="stepdiagram-list"></div>
+        <div id="stepdiagram-viewer"></div>
+      </div>
     </div>
 
     <div id="detail" class="hidden">
@@ -1168,18 +1198,23 @@ function resetTrace() {
 function switchView(view) {
   const grid = document.getElementById('grid-area');
   const diagram = document.getElementById('diagram-area');
+  const stepdiagram = document.getElementById('stepdiagram-area');
   const btnGrid = document.getElementById('btn-grid');
   const btnDiagram = document.getElementById('btn-diagram');
-  if (view === 'grid') {
-    grid.classList.remove('hidden-view');
-    diagram.classList.remove('visible');
-    btnGrid.classList.add('active');
-    btnDiagram.classList.remove('active');
-  } else {
-    grid.classList.add('hidden-view');
-    diagram.classList.add('visible');
-    btnGrid.classList.remove('active');
-    btnDiagram.classList.add('active');
+  const btnStepDiagram = document.getElementById('btn-stepdiagram');
+
+  grid.classList.toggle('hidden-view', view !== 'grid');
+  diagram.classList.toggle('visible', view === 'diagram');
+  stepdiagram.classList.toggle('visible', view === 'stepdiagram');
+
+  btnGrid.classList.toggle('active', view === 'grid');
+  btnDiagram.classList.toggle('active', view === 'diagram');
+  btnStepDiagram.classList.toggle('active', view === 'stepdiagram');
+
+  if (view === 'stepdiagram' && !stepDiagramInitialized) {
+    renderStepDiagramList();
+    selectStepDiagram(1);
+    stepDiagramInitialized = true;
   }
 }
 

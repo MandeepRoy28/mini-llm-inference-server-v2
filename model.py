@@ -196,41 +196,39 @@ def gpt_model_forward(
 
     Calls: build_causal_mask (step 4), transformer_block (step 8)
     """
-    # TODO:
-    #   1. Get seq_len from token_ids shape
-    #   2. Look up token embeddings (wte) + position embeddings (wpe) → x
-    #   3. Build causal mask for seq_len (step 4)
-    #   4. Loop over each block in params['blocks']:
-    #        pass x through transformer_block with that block's attn/ffn params
-    #   5. Apply final LayerNorm to x using ln_f_w, ln_f_b
-    #   6. Unembed: x @ wte.T to get logits of shape (batch, seq_len, vocab_size)
-    seq_len = token_ids.size(-1)
-    x = params['wte'][token_ids] + params['wpe'][:seq_len] # Here doing embeeding + PE
-    mask = build_causal_mask(seq_len)
+    seq_len = token_ids.shape[-1]
+    token_embeed = params['wte'][token_ids]
+    pos_encd = params['wpe'][:seq_len]
 
-    for block_param in params['blocks'] :
+    x = token_embeed + pos_encd
+    casual_mask = build_causal_mask(seq_len)
+    n_blocks = len(params['blocks'])
+
+    for i in range(n_blocks):
         attn_params = {
-            'W_q' : block_param['W_q'],
-            'W_k' : block_param['W_k'],
-            'W_v' : block_param['W_v'],
-            'W_o' : block_param['W_o'],
-            'gamma_1' : block_param['gamma_1'],
-            'beta_1' : block_param['beta_1']
+            'W_q' : params['blocks'][i]['W_q'],
+            'W_k' : params['blocks'][i]['W_k'],
+            'W_v' : params['blocks'][i]['W_v'],
+            'W_o' : params['blocks'][i]['W_o'],
+            'gamma_1' : params['blocks'][i]['gamma_1'],
+            'beta_1' : params['blocks'][i]['beta_1']
         }
-
         ffn_params = {
-            'W1' : block_param['W1'],
-            'b1' : block_param['b1'],
-            'W2' : block_param['W2'],
-            'b2' : block_param['b2'],
-            'gamma_2' : block_param['gamma_2'],
-            'beta_2' : block_param['beta_2']
+            'W1' : params['blocks'][i]['W1'],
+            'b1' : params['blocks'][i]['b1'],
+            'W2' : params['blocks'][i]['W2'],
+            'b2' : params['blocks'][i]['b2'],
+            'gamma_2' : params['blocks'][i]['gamma_2'],
+            'beta_2' : params['blocks'][i]['beta_2'] 
         }
-        x = transformer_block(x, attn_params, ffn_params, block_param['n_heads'], mask)
+        n_heads = params['blocks'][i]['n_heads']
+        x = transformer_block(x, attn_params, ffn_params, n_heads, mask=casual_mask)
 
-    x = torch.layer_norm(x, [x.size(-1)], params['ln_f_gamma'], params['ln_f_beta'])
+    x = torch.layer_norm(x, [x.shape[-1]], params['ln_f_gamma'], params['ln_f_beta'])
 
-    return x@params['wte'].transpose(-2, -1)
+    logits = x @ params['wte'].transpose(-1, -2)
+    return logits 
+
 
 # ---------------------------------------------------------------------------
 # Part 2 — Sampling
