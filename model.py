@@ -248,7 +248,7 @@ import torch
 def temperature_scaling(logits: torch.Tensor, temperature: float) -> torch.Tensor:
     """Divide logits by temperature (higher T → flatter distribution)."""
     # TODO: return logits / temperature   (clamp temperature > 0 to be safe)
-    return logits/abs(temperature)
+    return logits/max(temperature, 1e-8)
 
 
 # Step 12 - top_k_filter
