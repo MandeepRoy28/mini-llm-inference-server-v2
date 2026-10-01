@@ -849,6 +849,720 @@ const STEPS = [
     calls:[52], calledBy:[] },
 ];
 
+// ─── PER-STEP ASCII BLOCK DIAGRAMS ─────────────────────────────────────────
+const DIAGRAMS = {
+1:
+`"the cat sat"
+      │  split on whitespace
+      ▼
+["the","cat","sat"]
+      │  dedupe, assign ids 0..n
+      ▼
+token_to_id = {the:0, cat:1, sat:2}
+id_to_token = {0:the, 1:cat, 2:sat}`,
+
+2:
+`text="the cat sat"      token_to_id
+      │                      │
+      ▼                      │
+   split() ──────────────────┘
+      │  look up each word
+      ▼
+[0, 1, 2]`,
+
+3:
+`ids=[0,1,2,3,4,0]     id_to_token
+      │                    │
+      ▼                    │
+ map each id ───────────────┘
+      │
+      ▼
+" ".join(tokens)
+      │
+      ▼
+"the cat sat on mat the"`,
+
+4:
+`seq_len=3
+      │
+      ▼
+ones(3,3).triu(diagonal=1).bool()
+
+      the  cat  sat
+the [  F    T    T  ]   ← "the" can't see "cat","sat"
+cat [  F    F    T  ]   ← "cat" can't see "sat"
+sat [  F    F    F  ]   ← "sat" sees everyone (all past)
+
+True = masked (blocked, future token)`,
+
+5:
+`   Q [.., T, d_k]   K [.., T, d_k]   V [.., T, d_k]
+        │                │                │
+        └──────► Q @ Kᵗ ◄┘                │
+                   │
+                   ▼  / sqrt(d_k)
+             scores [.., T, T]
+                   │
+         mask ───► masked_fill(-1e9)
+                   │
+                   ▼ softmax(dim=-1)
+             weights [.., T, T]
+                   │
+                   └──────► weights @ V ◄── V
+                               │
+                               ▼
+                         output [.., T, d_k]`,
+
+6:
+`x [B,T,d_model]
+   │ project
+   ├─► Q=x@Wq  K=x@Wk  V=x@Wv     [B,T,d_model]
+   │
+   ▼ reshape + transpose (split heads)
+Q,K,V  [B,n_head,T,d_k]
+   │
+   ▼ scaled_dot_product_attention (step 5), mask forwarded
+O  [B,n_head,T,d_k]
+   │
+   ▼ transpose back + reshape (merge heads)
+O  [B,T,d_model]
+   │
+   ▼ @ W_o
+output [B,T,d_model]`,
+
+7:
+`x [B,T,d_model]
+   │
+   ▼ x @ W1 + b1
+hidden [B,T,4*d_model]
+   │
+   ▼ GELU
+hidden [B,T,4*d_model]
+   │
+   ▼ hidden @ W2 + b2
+output [B,T,d_model]`,
+
+8:
+`        x
+        ├─────────────────┐ (residual)
+        ▼                  │
+   LayerNorm(gamma_1,beta_1)
+        ▼                  │
+  multi_head_attention (step 6, +mask)
+        ▼                  │
+        + ◄────────────────┘
+        ├─────────────────┐ (residual)
+        ▼                  │
+   LayerNorm(gamma_2,beta_2)
+        ▼                  │
+   feed_forward_block (step 7)
+        ▼                  │
+        + ◄────────────────┘
+        ▼
+      output`,
+
+9:
+`token_ids [B,T]
+   │
+   ▼ wte[token_ids] + wpe[:T]
+x [B,T,d_model]
+   │
+   ▼ build_causal_mask(T)          (step 4)
+mask [T,T]
+   │
+   ▼ transformer_block × N          (step 8, loop over params['blocks'])
+x [B,T,d_model]
+   │
+   ▼ final LayerNorm(ln_f_gamma,ln_f_beta)
+x [B,T,d_model]
+   │
+   ▼ x @ wte.T    (weight tying — unembed)
+logits [B,T,vocab_size]`,
+
+10:
+`logits [vocab_size]
+   │
+   ▼ argmax(-1)
+next_token_id (int)`,
+
+11:
+`logits               temperature (T)
+   │                      │
+   └──────► logits / T ◄──┘
+                │
+                ▼
+        scaled_logits
+   T<1 → sharper (confident)
+   T>1 → flatter (random)`,
+
+12:
+`logits [vocab]     k
+   │               │
+   ▼ topk(k).values[-1]  (k-th largest)
+threshold
+   │
+   ▼ mask everything < threshold → -inf
+filtered_logits   (only top-k survive)`,
+
+13:
+`logits [vocab]
+   │
+   ▼ sort(descending=True)
+sorted_logits, sorted_idx
+   │
+   ▼ softmax → cumsum
+cumulative_probs
+   │
+   ▼ mask where (cumsum - prob) > p
+sorted_logits (tail set to -inf)
+   │
+   ▼ scatter back to original order
+filtered_logits`,
+
+14:
+`logits
+   │
+   ▼ temperature_scaling (step 11)
+   │
+   ▼ top_k_filter if k>0 (step 12)
+   │
+   ▼ top_p_nucleus_filter if p<1.0 (step 13)
+   │
+   ▼ softmax
+probs
+   │
+   ▼ multinomial(probs, 1)
+next_token_id (int)`,
+
+15:
+`input_ids [B,T]
+   │
+   ├────────────────────────┐
+   ▼                        │ repeat up to max_new_tokens
+model_forward(input_ids)    │
+   │                        │
+   ▼ take logits[:,-1,:]    │
+sample_next_token (step 14) │
+   │                        │
+   ▼ cat([input_ids, next]) │
+input_ids (T+1) ────────────┘
+   │
+   ▼ (stop early if next==eos)
+output input_ids`,
+
+16:
+`prompt (str)
+   │
+   ▼ encode (step 2)
+input_ids
+   │
+   ▼ autoregressive_generate (step 15)
+output_ids
+   │
+   ▼ decode (step 3)
+generated text (str)`,
+
+17:
+`batch_size, n_heads, max_seq_len, d_k, n_layers
+   │
+   ▼ for each of n_layers:
+       k = zeros(B,H,max_len,d_k)
+       v = zeros(B,H,max_len,d_k)
+   ▼
+cache = [ {k,v}, {k,v}, ... ]   (one dict per layer)`,
+
+18:
+`cache, layer_idx, step, k, v
+   │
+   ▼
+cache[layer_idx]['k'][:,:,step,:] = k   (in-place)
+cache[layer_idx]['v'][:,:,step,:] = v   (in-place)`,
+
+19:
+`cache, layer_idx, current_len
+   │
+   ▼
+k = cache[layer_idx]['k'][:,:,:current_len,:]
+v = cache[layer_idx]['v'][:,:,:current_len,:]
+   │
+   ▼
+return (k, v)      ← view, not a copy`,
+
+20:
+`q [B,H,1,d_k]         cache, layer_idx, current_len
+   │                        │
+   │                        ▼ read_kv_from_cache (step 19)
+   │                   k,v [B,H,current_len,d_k]
+   │                        │
+   └──────► scaled_dot_product_attention (step 5), mask=None
+                   │
+                   ▼
+             output [B,H,1,d_k]
+   (no causal mask needed — cached tokens are all in the past)`,
+
+21:
+`input_ids [B, prompt_len]      cache
+   │                              │
+   ▼ model_forward_with_cache(input_ids, cache, start_pos=0)
+   (writes K/V for every prompt token → step 18 internally)
+logits [B, prompt_len, vocab]
+   │
+   ▼ take logits[:, -1, :]
+return (last_logits, prompt_len)`,
+
+22:
+`last_token_id, cache, step, temperature
+   │
+   ▼ wrap as [[last_token_id]]
+   ▼ model_forward_with_cache(token, cache, start_pos=step)
+logits [1,1,vocab]
+   │
+   ▼ sample_next_token (step 14)
+next_token_id
+   │
+   ▼
+return (next_token_id, updated_cache)`,
+
+23:
+`model_forward, input_ids, n_steps
+   │
+   ▼ t0 = perf_counter()
+   ▼ autoregressive_generate(... n_steps)   (step 15, no cache)
+   ▼ elapsed = perf_counter() - t0
+   │
+   ▼
+{total_time, n_tokens, time_per_token}`,
+
+24:
+`            ┌─ benchmark_no_cache (step 23) ──► time_no_cache
+input_ids ──┤
+            └─ prefill_phase (21) + n× decode_phase (22) ──► time_with_cache
+                      │
+                      ▼
+     speedup_factor = time_no_cache / time_with_cache`,
+
+25:
+`sequence_lengths=[50,120,30,...]   max_seq_len=2048
+   │
+   ▼ total_allocated = n_seqs * max_seq_len
+   ▼ total_used = sum(sequence_lengths)
+   ▼ wasted = allocated - used
+   │
+   ▼
+{total_allocated, total_used, wasted_slots, waste_percentage}`,
+
+26:
+`(no input)
+   │
+   ▼
+return 16     ← fixed tokens-per-page constant`,
+
+27:
+`n_sequences
+   │
+   ▼
+{ 0: [],  1: [],  2: [], ... }   ← empty page-index list per seq
+   (filled later by assign_page_to_sequence)`,
+
+28:
+`n_pages, page_size(=16), n_heads, d_k, n_layers
+   │
+   ▼
+k_pages = zeros(n_layers, n_pages, n_heads, page_size, d_k)
+v_pages = zeros(n_layers, n_pages, n_heads, page_size, d_k)
+free_pages = [0, 1, 2, ..., n_pages-1]
+   │
+   ▼
+{k_pages, v_pages, free_pages}`,
+
+29:
+`pool.free_pages = [5,6,7,...]     block_table, seq_id
+        │
+        ▼ pop(0)
+   page_idx = 5
+        │
+        ▼ block_table[seq_id].append(5)
+   block_table[seq_id] = [...,5]
+        │
+        ▼
+   return 5`,
+
+30:
+`token_pos=19, page_size=16
+   │
+   ▼ page_number = 19 // 16 = 1
+   ▼ slot        = 19 % 16  = 3
+   ▼ page_idx = block_table[seq_id][1]   ← e.g. physical page #7
+   │
+   ▼
+pool.k_pages[layer, 7, :, 3, :] = k
+pool.v_pages[layer, 7, :, 3, :] = v     (in-place, no copy)`,
+
+31:
+`block_table[seq_id] = [page7, page2, page9]     seq_len=35
+   │
+   ▼ for each page (page_size=16):
+       page7 → slots 0..15  (full)
+       page2 → slots 0..15  (full)
+       page9 → slots 0..2   (partial, 35-32=3 valid)
+   │
+   ▼ concatenate chunks along seq dim
+k_full, v_full  [.., 35, d_k]     (reassembled, contiguous)`,
+
+32:
+`block_table[seq_id] = [7, 2, 9]
+   │
+   ▼ pop seq_id from block_table
+pages = [7, 2, 9]
+   │
+   ▼ pool.free_pages.extend(pages)
+pool.free_pages = [...,7,2,9]   ← ready for reuse by any sequence
+   │
+   ▼
+return 3   (pages freed)`,
+
+33:
+`q, pool, block_table, seq_id, seq_len, layer_idx
+   │
+   ▼ read_kv_via_block_table (step 31)
+k, v  (reassembled from pages)
+   │
+   ▼ scaled_dot_product_attention (step 5), mask=None
+output`,
+
+34:
+`sequence_lengths=[10,200,50]   max_seq_len=200
+   │
+   ▼ total_compute = n_seqs * max_seq_len
+   ▼ useful_compute = sum(sequence_lengths)
+   │
+   ▼
+wasted_compute_pct = (total-useful)/total * 100
+   (the 10-token seq wastes 95% of its allotted steps)`,
+
+35:
+`requests = [req0, req1, req2, ...]
+   │
+   ▼ queue.Queue()
+   ▼ put each request, in order
+   │
+   ▼
+request_queue   (FIFO, thread-safe)`,
+
+36:
+`(no input)
+   │
+   ▼
+{}   ← empty dict, will hold
+       {seq_id: {input_ids, step, request}}`,
+
+37:
+`batch, request={"prompt":"...", "max_tokens":50}, seq_id
+   │
+   ▼ encode(request.prompt, token_to_id)   (step 2)
+token_ids
+   │
+   ▼
+batch[seq_id] = {input_ids: token_ids, step: 0, request: request}`,
+
+38:
+`request_queue, running_batch, max_batch_size
+   │
+   ▼ while len(batch) < max_batch_size and queue not empty:
+       request = queue.get()
+       seq_id  = max(batch.keys(), default=-1) + 1
+       add_to_batch(batch, request, seq_id)   (step 37)
+       added.append(seq_id)
+   │
+   ▼
+return added   ← seq_ids filled this iteration`,
+
+39:
+`running_batch = {0:{...}, 1:{...}, 2:{...}}
+   │
+   ▼ for each seq_id, state in batch:
+       logits = model_forward_with_cache(last_token)
+       next_id = sample_next_token (step 14)
+       write_kv_to_page (step 30)
+       state.input_ids.append(next_id); state.step += 1
+   │
+   ▼
+return {0: next_id0, 1: next_id1, 2: next_id2}`,
+
+40:
+`running_batch, eos_token_id
+   │
+   ▼ for each seq_id, state:
+       done? last_token==eos OR step>=max_tokens
+       │
+       ▼ if done:
+          free_pages_on_completion (step 32)
+          del batch[seq_id]
+          completed.append(seq_id)
+   │
+   ▼
+return completed`,
+
+41:
+`build_running_batch (36) ──┐
+create_block_table (27) ───┤
+                            ▼
+   while queue not empty OR batch not empty:
+     ┌──────────────────────────────┐
+     │ iteration_level_scheduler(38) │ ← fill batch from queue
+     │ batched_decode_step(39)       │ ← one decode step, all seqs
+     │ handle_sequence_completion(40)│ ← evict finished, free pages
+     └──────────────────────────────┘
+                            │
+                            ▼
+                 completed_sequences`,
+
+42:
+`completed_sequences, total_time
+   │
+   ▼ total_requests = len(completed_sequences)
+   ▼ total_tokens = sum(len(s.output_ids) for s in completed_sequences)
+   │
+   ▼
+{requests_per_sec: total_requests/total_time,
+ tokens_per_sec:   total_tokens/total_time}`,
+
+43:
+`HTTP POST body (JSON)
+   │
+   ▼ Pydantic validation
+GenerateRequest {
+  prompt: str
+  max_tokens: int = 100
+  temperature: float = 1.0
+  top_k: int = 0
+  top_p: float = 1.0
+}`,
+
+44:
+`generated_text, tokens_generated, ttft, total_time
+   │
+   ▼
+GenerateResponse {
+  generated_text, tokens_generated,
+  time_to_first_token, total_time,
+  request_id (uuid4)
+}
+   │
+   ▼ .tokens_per_second()
+tokens_generated / total_time   (0.0 if total_time<=0)`,
+
+45:
+`model_name, max_batch_size, page_pool_size
+   │
+   ▼ load tokenizer + model weights
+   ▼ allocate_kv_cache_buffers (step 17)
+   ▼ allocate_page_pool (step 28)
+   │
+   ▼
+_ENGINE = {model, tokenizer, cache, pool, ...}   (module singleton)`,
+
+46:
+`(no input)
+   │
+   ▼ _ENGINE is None?
+       │yes              │no
+       ▼                 │
+  initialize_engine (45) │
+       │                 │
+       └────────┬────────┘
+                ▼
+           return _ENGINE`,
+
+47:
+`engine, request
+   │
+   ▼ encode(request.prompt)          (step 2)
+input_ids
+   │
+   ▼ for step in range(max_tokens):   (async generator)
+       forward pass
+       sample_next_token (14)
+       write_kv_to_page (30)
+       yield decode([next_id])        (step 3)
+       if next_id == eos: break
+   │
+   ▼
+yield "[DONE]"`,
+
+48:
+`POST /generate/stream  (GenerateRequest)
+   │
+   ▼ get_inference_engine (46)
+   ▼ streaming_token_generator (47)
+   │
+   ▼
+StreamingResponse(gen, media_type="text/event-stream")
+   │
+   ▼
+SSE:  data: tok1 \\n\\n  data: tok2 \\n\\n ...  data: [DONE]`,
+
+49:
+`POST /generate  (GenerateRequest)
+   │
+   ▼ t0 = perf_counter()
+   ▼ get_inference_engine (46)
+   ▼ encode (2) → autoregressive_generate (15) → decode (3)
+   ▼ elapsed = perf_counter() - t0
+   │
+   ▼
+GenerateResponse(text, tokens, ttft, elapsed, uuid)`,
+
+50:
+`host, port, prompt, max_tokens
+   │
+   ▼ payload = json.dumps({prompt, max_tokens})
+   │
+   ▼
+'curl -X POST http://host:port/generate
+      -H "Content-Type: application/json"
+      -d "<payload>"'`,
+
+51:
+`raw_response (multi-line SSE text)
+   │
+   ▼ split into lines
+   ▼ keep lines starting with "data: " and not containing "[DONE]"
+   ▼ strip "data: " prefix
+   │
+   ▼
+["tok1", "tok2", "tok3", ...]`,
+
+52:
+`ttft_list, tpot_list, total_tokens, total_time
+   │
+   ▼ mean/p50/p95/p99  (np.percentile)   for ttft
+   ▼ mean/p50/p95/p99  (np.percentile)   for tpot
+   ▼ tokens_per_sec = total_tokens/total_time
+   │
+   ▼
+{ttft_mean,ttft_p50,ttft_p95,ttft_p99,
+ tpot_mean,tpot_p50,tpot_p95,tpot_p99, tokens_per_sec}`,
+
+53:
+`n, min/max_prompt_len, min/max_max_tokens, seed
+   │
+   ▼ rng = np.random.default_rng(seed)
+   ▼ for i in range(n):
+       plen = rng.integers(min_len,max_len)
+       mtok = rng.integers(min_tok,max_tok)
+       prompt = " ".join(str(rng.integers(0,999)) for _ in range(plen))
+   │
+   ▼
+[{"prompt": "...", "max_tokens": mtok}, ... ]  (n dicts)`,
+
+54:
+`engine_fn, request, n_warmup
+   │
+   ▼ for _ in range(n_warmup): engine_fn(request)   (JIT/GPU warmup)
+   ▼ t0 = perf_counter()
+   ▼ result = engine_fn(request)
+   ▼ ttft from result / tpot = elapsed/(tokens-1)
+   │
+   ▼
+{ttft, tpot, tokens_generated}`,
+
+55:
+`engine_fn, requests[n], concurrency
+   │
+   ▼ sem = asyncio.Semaphore(concurrency)
+   ▼ bounded(req): async with sem: run_single_request_benchmark (54)
+   │
+   ▼ t0 = perf_counter()
+   ▼ asyncio.gather(*[bounded(r) for r in requests])
+   ▼ elapsed = perf_counter()-t0
+   │
+   ▼
+{total_time, throughput_rps, throughput_tps, latency_results[]}`,
+
+56:
+`results=[{batch_size,ttft_mean,tpot_mean}, ...]
+   │
+   ▼ extract batch_size[], ttft_mean[], tpot_mean[]
+   │
+   ├─► subplot 1: TTFT vs batch_size
+   └─► subplot 2: TPOT vs batch_size
+   │
+   ▼
+save_path?  → savefig(save_path)
+   ▼
+plt.show()`,
+
+57:
+`results=[{concurrency,throughput_tps}, ...]
+   │
+   ▼ extract concurrency[], throughput_tps[]
+   ▼ peak_idx = argmax(throughput_tps)
+   │
+   ▼ plot curve + annotate peak point
+   │
+   ▼
+save_path? → savefig(save_path)
+   ▼
+plt.show()`,
+
+58:
+`results={"ttft_mean":0.15, "tpot_p99":0.06, ...}
+   │
+   ▼ header: "Metric"(left) | "Value"(right) + divider
+   ▼ for key,val in results.items():
+       row = f"{key:<25}{val:>15.4f}"
+   │
+   ▼
+report (multi-line ASCII table string)
+   │
+   ▼ output_path? → write to file
+   ▼
+return report`,
+};
+
+let stepDiagramInitialized = false;
+let activeStepDiagramId = null;
+
+function renderStepDiagramList() {
+  const list = document.getElementById('stepdiagram-list');
+  let html = '';
+  PARTS.forEach(part => {
+    html += `<div class="sd-part-label" style="color:${part.color}">Part ${part.id} · ${part.name}</div>`;
+    STEPS.filter(s => s.part === part.id).forEach(step => {
+      html += `<div class="sd-item" id="sd-item-${step.id}" onclick="selectStepDiagram(${step.id})">
+        <span style="color:var(--muted);font-weight:700;margin-right:6px">${String(step.id).padStart(2,'0')}</span>${step.name}
+      </div>`;
+    });
+  });
+  list.innerHTML = html;
+}
+
+function selectStepDiagram(stepId) {
+  activeStepDiagramId = stepId;
+  const step = STEPS.find(s => s.id === stepId);
+  if (!step) return;
+
+  document.querySelectorAll('.sd-item').forEach(el => el.classList.remove('active'));
+  const activeEl = document.getElementById(`sd-item-${stepId}`);
+  if (activeEl) activeEl.classList.add('active');
+
+  const part = PARTS.find(p => p.id === step.part);
+  const color = getPartColor(step.part);
+  const diagram = DIAGRAMS[stepId] || 'No diagram yet for this step.';
+
+  document.getElementById('stepdiagram-viewer').innerHTML = `
+    <div class="sd-viewer-head">
+      <div class="sd-viewer-num" style="color:${color}">STEP ${step.id} · PART ${step.part} — ${part.name}</div>
+      <div class="sd-viewer-name">${step.name}()</div>
+      <div class="sd-viewer-brief">${step.brief}</div>
+    </div>
+    <div class="sd-diagram-box">${diagram}</div>
+  `;
+
+  if (activeEl) activeEl.scrollIntoView({ block: 'nearest' });
+}
+
 let activeStepId = null;
 
 function getPartColor(partId) {
