@@ -304,8 +304,6 @@ def sample_next_token(
     
 
 
-
-
 # Step 15 - autoregressive_generate
 import torch
 
@@ -322,24 +320,16 @@ def autoregressive_generate(
 
     Calls: sample_next_token (step 14)
     """
-    # TODO:
-    #   1. Loop up to max_new_tokens times
-    #   2. Each iteration: run model_forward on the current input_ids to get logits,
-    #      then extract the logits at the last sequence position
-    #   3. Call sample_next_token on those last-position logits using
-    #      temperature, top_k, and top_p to get the next token id
-    #   4. Append the new token id to input_ids (concatenate along the sequence dim)
-    #   5. If the new token equals eos_token_id, stop early
-    #   6. Return the full sequence of input_ids including generated tokens
-    
     for _ in range(max_new_tokens):
-      logits = model_forward(input_ids)
-      last_logit = logits.reshape(-1, logits.size(-1))[-1]
-      next_token_id = sample_next_token(last_logit, temperature, top_k, top_p)
-      next_token_id_tensor = torch.tensor(next_token_id, dtype=torch.long).reshape([1] * input_ids.dim())
-      input_ids = torch.cat([input_ids, next_token_id_tensor], dim=-1)
-      if eos_token_id and eos_token_id == next_token_id:
-          break
+        logits = model_forward(input_ids)
+        last_logit = logits.reshape(-1, logits.size(-1))[-1]
+        next_id = sample_next_token(last_logit, temperature, top_k, top_p)
+
+        next_id_tensor = torch.tensor(next_id, dtype=input_ids.dtype).reshape([1]*input_ids.dim()) # To make it same dimension as input_ids cause need to concat 
+        input_ids = torch.cat([input_ids, next_id_tensor], dim=-1)
+
+        if eos_token_id is not None and eos_token_id == next_id :
+            break
 
     return input_ids
 
