@@ -258,7 +258,7 @@ def top_k_filter(logits: torch.Tensor, k: int) -> torch.Tensor:
     """Zero out all logits except the top-k values (set others to -inf)."""
     # TODO: find the k-th largest value; mask everything below it to -inf
     values, indexes  = torch.topk(logits, k)
-    mask = logits < values[-1] 
+    mask = logits < values[..., -1:] 
 
     logits = logits.masked_fill(mask, float('-inf'))
     return logits
@@ -293,20 +293,9 @@ def sample_next_token(
     Calls: temperature_scaling (step 11), top_k_filter (step 12),
            top_p_nucleus_filter (step 13)
     """
-    # TODO:
-    #   logits = temperature_scaling(logits, temperature)
-    #   if top_k > 0: logits = top_k_filter(logits, top_k)
-    #   if top_p < 1.0: logits = top_p_nucleus_filter(logits, top_p)
-    #   probs = softmax(logits, dim=-1)
-    #   return int(torch.multinomial(probs, 1))
     logits = temperature_scaling(logits, temperature)
-    if top_k > 0 :
-        logits = top_k_filter(logits, top_k)
-    if top_p < 1.0 :
-        logits = top_p_nucleus_filter(logits, top_p)
 
-    probs = torch.softmax(logits, dim=-1)
-    return int(torch.multinomial(probs, 1))
+
 
 
 
