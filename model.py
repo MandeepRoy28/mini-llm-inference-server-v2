@@ -294,7 +294,14 @@ def sample_next_token(
            top_p_nucleus_filter (step 13)
     """
     logits = temperature_scaling(logits, temperature)
+    if top_k > 0 :
+        logits = top_k_filter(logits, top_k)
+    if top_p < 1 :
+        logits = top_p_nucleus_filter(logits, top_p)
 
+    probs = torch.softmax(logits, dim=-1)
+    return int(torch.multinomial(probs, 1))
+    
 
 
 
