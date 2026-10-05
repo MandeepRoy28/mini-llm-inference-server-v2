@@ -349,21 +349,13 @@ def generate_with_prompt(
 
     Calls: encode (step 2), autoregressive_generate (step 15), decode (step 3)
     """
-    # TODO:
-    #   1. Encode the prompt string into a list of token ids using encode
-    #   2. Convert that list into a tensor suitable for the model
-    #   3. Run autoregressive_generate with model_forward, the input tensor,
-    #      max_new_tokens, and the temperature setting
-    #   4. Convert the output tensor to a plain list of ids and decode back to a string
-    #   5. Return the decoded string
-    input_ids = encode(prompt, token_to_id)
-    input_ids = torch.tensor(input_ids, dtype=torch.long)
-    generated_input_ids = autoregressive_generate(
-        model_forward=model_forward, input_ids=input_ids, max_new_tokens=max_new_tokens, temperature=temperature
-        )
-    generated_input_ids_list = generated_input_ids.tolist()
-    generated_output = decode(generated_input_ids_list, id_to_token)
-    return generated_output
+    token_ids = encode(text=prompt, token_to_id=token_to_id)
+    token_ids = torch.tensor(token_ids, dtype=torch.long)
+    output_ids = autoregressive_generate(model_forward=model_forward, input_ids=token_ids, max_new_tokens=max_new_tokens, temperature=temperature)
+    output_ids = output_ids.tolist()
+    output = decode(output_ids, id_to_token)
+    return output
+
 
 
 
