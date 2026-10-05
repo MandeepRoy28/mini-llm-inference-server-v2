@@ -385,7 +385,7 @@ def allocate_kv_cache_buffers(
         kv_cache['k'] = torch.zeros((batch_size, n_heads, max_seq_len, d_k), dtype=dtype)
         kv_cache['v'] = torch.zeros((batch_size, n_heads, max_seq_len, d_k), dtype=dtype)
         output.append(kv_cache)
-        
+
     return output
 
 # Step 18 - write_kv_to_cache
@@ -399,11 +399,6 @@ def write_kv_to_cache(
     v: torch.Tensor,
 ) -> None:
     """Write key/value tensors at position `step` in the cache (in-place)."""
-    # TODO:
-    #   1. Index into the cache for the given layer
-    #   2. Write k into the K buffer at position step (all batches, all heads)
-    #   3. Write v into the V buffer at position step (all batches, all heads)
-    #   (Both writes are in-place; return nothing)
     cache[layer_idx]['k'][:,:,step:step+1,:] = k
     cache[layer_idx]['v'][:,:,step:step+1,:] = v
 
