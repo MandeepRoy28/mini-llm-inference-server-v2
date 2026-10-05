@@ -379,21 +379,14 @@ def allocate_kv_cache_buffers(
     Returns a list of dicts, one per layer, each with keys 'k' and 'v'
     of shape (batch_size, n_heads, max_seq_len, d_k).
     """
-    # TODO:
-    #   1. Build a list of n_layers dicts, one per transformer layer
-    #   2. Each dict holds a zero-filled K tensor and a zero-filled V tensor,
-    #      both of shape (batch_size, n_heads, max_seq_len, d_k) with the given dtype
-    #   3. Return the list
-    kv_cache_list = []
+    output = []
     for _ in range(n_layers):
-        k = torch.zeros(size=[batch_size, n_heads, max_seq_len, d_k], dtype=dtype)
-        v = torch.zeros(size=[batch_size, n_heads, max_seq_len, d_k], dtype=dtype)
-        kv_cache_list.append({
-            'k' : k,
-            'v' : v
-        })
-    
-    return kv_cache_list
+        kv_cache = {}
+        kv_cache['k'] = torch.zeros((batch_size, n_heads, max_seq_len, d_k), dtype=dtype)
+        kv_cache['v'] = torch.zeros((batch_size, n_heads, max_seq_len, d_k), dtype=dtype)
+        output.append(kv_cache)
+        
+    return output
 
 # Step 18 - write_kv_to_cache
 import torch
