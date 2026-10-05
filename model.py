@@ -412,19 +412,8 @@ def read_kv_from_cache(
     current_len: int,
 ) -> tuple[torch.Tensor, torch.Tensor]:
     """Read the first `current_len` entries from the cache for layer_idx."""
-    # TODO:
-    #   1. Look up the cache entry for the given layer
-    #   2. Slice the K buffer to keep only the first current_len positions
-    #      (all batches, all heads, positions 0..current_len-1, all d_k)
-    #   3. Do the same slice for the V buffer
-    #   4. Return the (k_slice, v_slice) pair
-    cur_cache = cache[layer_idx]
-    k = cur_cache['k']
-    v = cur_cache['v']
-
-    k = k[:,:,0:current_len,:]
-    v = v[:,:,0:current_len,:]
-
+    k = cache[layer_idx]['k'][:,:,:current_len,:]
+    v = cache[layer_idx]['v'][:,:,:current_len,:]
     return (k,v)
 
 
@@ -439,17 +428,10 @@ def attention_with_kv_cache(
 ) -> torch.Tensor:
     """Attend using cached K/V from previous steps.
 
-    Calls: read_kv_from_cache (step 19), scaled_dot_product_attention (step 5)
-    """
-    # TODO:
-    #   1. Retrieve the K and V slices for the given layer up to current_len
-    #      by calling read_kv_from_cache
-    #   2. Run scaled_dot_product_attention with q against those cached keys and values
-    #      (no causal mask is needed during decoding — past tokens are already fixed)
-    #   3. Return the attention output
-    K,V = read_kv_from_cache(cache, layer_idx, current_len) 
-    O = scaled_dot_product_attention(q, K, V)
-    return O
+    Calls: read_kv_from_cache (step 19), scaled_dot_product_attention (step 5)."""
+    k,v = read_kv_from_cache(cache, layer_idx, current_len)
+    return scaled_dot_product_attention(q,k,v)
+   
 
 
 # Step 21 - prefill_phase
